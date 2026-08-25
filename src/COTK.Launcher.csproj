@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>COTK.Launcher</AssemblyName>
+    <RootNamespace>COTK.Launcher</RootNamespace>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <ApplicationIcon>cotk.ico</ApplicationIcon>
+    <Version>0.9.1</Version>
+    <Product>COTK</Product>
+    <AssemblyTitle>COTK Launcher</AssemblyTitle>
+    <FileDescription>Launcher COTK - H1Z1 KotK Pre-Season 3</FileDescription>
+    <Company>COTK</Company>
+  </PropertyGroup>
+
+</Project>
+
