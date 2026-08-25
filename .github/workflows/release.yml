@@ -1,0 +1,122 @@
+﻿name: Release launcher
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-launcher
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Lire la version du csproj
+        id: ver
+        shell: pwsh
+        run: |
+          $xml = [xml](Get-Content src/COTK.Launcher.csproj)
+          $v = $xml.Project.PropertyGroup.Version
+          "version=$v" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "Version launcher : $v"
+
+      - name: Publish self-contained win-x64
+        run: dotnet publish src/COTK.Launcher.csproj -c Release -r win-x64 --self-contained true -o publish
+
+      - name: Stager zip (binaire + fonts + JOUE.bat)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force stage | Out-Null
+          Copy-Item publish/* stage/
+          Copy-Item fonts stage/fonts -Recurse
+          Copy-Item JOUE.bat stage/
+          Copy-Item ClientConfig.example.ini stage/
+          Copy-Item README.md stage/
+          Copy-Item Install-COTK.bat stage/
+          Copy-Item install stage/install -Recurse
+          Compress-Archive -Path stage/* `
+            -DestinationPath "cotk-launcher-${{ steps.ver.outputs.version }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-zip
+          path: cotk-launcher-*.zip
+          retention-days: 3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: launcher-zip
+          path: artifact/
+
+      - name: Calculer version / sha256 / taille
+        id: meta
+        run: |
+          ZIP=$(ls artifact/cotk-launcher-*.zip | head -1)
+          VER=${ZIP#artifact/cotk-launcher-}; VER=${VER%.zip}
+          SHA=$(sha256sum "$ZIP" | cut -d' ' -f1)
+          SIZE=$(stat -c%s "$ZIP")
+          echo "zip=$ZIP"        >> "$GITHUB_OUTPUT"
+          echo "ver=$VER"        >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA"        >> "$GITHUB_OUTPUT"
+          echo "size=$SIZE"      >> "$GITHUB_OUTPUT"
+          echo "Launcher v$VER : $SIZE octets, sha256=$SHA"
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Uploader vers dl.cotk.fr + mettre a jour le manifeste
+        env:
+          VER: ${{ steps.meta.outputs.ver }}
+          SHA: ${{ steps.meta.outputs.sha }}
+          SIZE: ${{ steps.meta.outputs.size }}
+          ZIP: ${{ steps.meta.outputs.zip }}
+        run: |
+          scp "$ZIP" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/"
+
+          # Manifeste mis a jour localement puis pousse en un seul fichier :
+          # evite tout quoting de script distant multi-lignes.
+          curl -fsS https://dl.cotk.fr/manifest.json | jq \
+            --arg ver "$VER" --arg sha "$SHA" --argjson size "$SIZE" '
+            .launcher.version     = $ver
+            | .launcher.downloadUrl = ("https://dl.cotk.fr/cotk-launcher-" + $ver + ".zip")
+            | .launcher.sha256      = $sha
+            | .launcher.sizeBytes   = $size' > manifest.json
+
+          scp manifest.json \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/manifest.json.new"
+
+          ssh -o StrictHostKeyChecking=accept-new "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            "sudo mv /tmp/\$(basename $ZIP) /opt/zemu/downloads/ && sudo cp /opt/zemu/downloads/\$(basename $ZIP) /opt/zemu/downloads/cotk-launcher-latest.zip && sudo mv /tmp/manifest.json.new /opt/zemu/downloads/manifest.json && sudo chmod 644 /opt/zemu/downloads/*"
+
+          sleep 3
+          LIVE=$(curl -fsS https://dl.cotk.fr/manifest.json | jq -r .launcher.sha256)
+          [ "$LIVE" = "$SHA" ] || { echo "Manifeste non propage : $LIVE != $SHA"; exit 1; }
+          echo "dl.cotk.fr a jour : launcher v$VER."
+
+      - name: Attacher le zip a un tag
+        env:
+          VER: ${{ steps.meta.outputs.ver }}
+        run: |
+          git tag "launcher-v$VER" --force || true
+          git push origin "launcher-v$VER" --force || true
