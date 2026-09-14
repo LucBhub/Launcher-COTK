@@ -1,0 +1,15 @@
+# Build .NET
+[Bb]in/
+[Oo]bj/
+*.user
+.vs/
+
+# Sorties de build du launcher
+COTK.Launcher.exe
+COTK.Launcher.dll
+COTK.Launcher.pdb
+COTK.Launcher.deps.json
+COTK.Launcher.runtimeconfig.json
+
+# Donnees locales runtime
+data/
