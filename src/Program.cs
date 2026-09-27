@@ -201,9 +201,48 @@ internal static class GameLauncher
             .Where(line => !line.TrimStart().StartsWith("SessionId=", StringComparison.OrdinalIgnoreCase)
                 && !line.TrimStart().StartsWith("Server=", StringComparison.OrdinalIgnoreCase))
             .ToList();
+        EnforceClientLogLevel(lines);
         lines.Insert(0, "Server=" + LauncherConfig.GameServer);
         lines.Insert(0, $"SessionId={ticket}");
         return lines;
+    }
+
+    /// <summary>
+    /// Client log level written on every launch (2026-09-27, stutter root cause).
+    /// At LocalLogLevel=9 the 1087 client writes one line per render pipeline it creates
+    /// (~3800 per session) synchronously on the frame thread, reopening the log file each
+    /// time: 40-110 ms hitches when driving through towns, worst on HDDs. Measured on a real
+    /// client: same town, same session, 21 hitches at level 9, none at level 3. Level 4, not 3:
+    /// the stage markers DetectClientStage reads (GAMESTATE_*, cClientRunStateRunning,
+    /// BaseApp::Run, WaitForWorldReady) are level-4 lines, and none are written while driving;
+    /// the pipeline spam is level 5. The key must be present: absent, the client defaults to 5.
+    /// COTK_CLIENT_LOG_LEVEL overrides it for debugging.
+    /// </summary>
+    internal const int DefaultClientLogLevel = 4;
+
+    internal static int ClientLogLevel =>
+        int.TryParse(Environment.GetEnvironmentVariable("COTK_CLIENT_LOG_LEVEL"), out var level)
+            && level is >= 0 and <= 9
+                ? level
+                : DefaultClientLogLevel;
+
+    /// <summary>Exactly one LocalLogLevel line, right under the first [Logging] header
+    /// (the section is appended when missing). Other lines are left untouched.</summary>
+    internal static void EnforceClientLogLevel(List<string> lines)
+    {
+        lines.RemoveAll(line => line.TrimStart().StartsWith("LocalLogLevel=", StringComparison.OrdinalIgnoreCase));
+        var entry = $"LocalLogLevel={ClientLogLevel}";
+        var header = lines.FindIndex(line => line.Trim().Equals("[Logging]", StringComparison.OrdinalIgnoreCase));
+        if (header >= 0)
+        {
+            lines.Insert(header + 1, entry);
+            return;
+        }
+
+        if (lines.Count > 0 && lines[^1].Trim().Length > 0)
+            lines.Add(string.Empty);
+        lines.Add("[Logging]");
+        lines.Add(entry);
     }
 
     public static bool ServerPortsUp()

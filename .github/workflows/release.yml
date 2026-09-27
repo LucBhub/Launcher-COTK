@@ -31,46 +31,11 @@ jobs:
           "version=$v" | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "Version launcher : $v"
 
+      - name: Tester le launcher avant publication
+        run: dotnet test tests/COTK.Launcher.Tests.csproj -c Release
+
       - name: Publish self-contained win-x64
         run: dotnet publish src/COTK.Launcher.csproj -c Release -r win-x64 --self-contained true -o stage
-
-      - name: Lire le pin COTK (outil console, obligatoire)
-        id: cotkpin
-        shell: pwsh
-        run: |
-          # Le pin est synchronise depuis tools/ci/launcher/cotk.pin (voir
-          # l'entree Extra du sync) ; ici, chemin relatif au depot dedie.
-          $pinPath = 'cotk.pin'
-          if (-not (Test-Path $pinPath)) { throw 'cotk.pin manquant : refus de builder un outil non epingle.' }
-          $sha = (Get-Content $pinPath -Raw).Trim()
-          if ($sha -notmatch '^[0-9a-f]{40}$') { throw "cotk.pin invalide : '$sha'." }
-          "sha=$sha" | Out-File $env:GITHUB_OUTPUT -Append
-          Write-Host "COTK epingle : $sha"
-
-      - name: Checkout COTK epingle (lecture seule)
-        uses: actions/checkout@v4
-        with:
-          # PREREQUIS : secret COTK_CHECKOUT_TOKEN (lecture seule du depot COTK),
-          # a provisionner par un administrateur GitHub dans ce depot. Le depot
-          # COTK est prive : sans ce secret, actions/checkout ne peut pas le lire
-          # et l'etape echoue au lieu de builder silencieusement un autre commit.
-          repository: LucBhub/serveur-COTK
-          ref: ${{ steps.cotkpin.outputs.sha }}
-          path: cotk-src
-          token: ${{ secrets.COTK_CHECKOUT_TOKEN }}
-
-      - name: Publier ToggleConsole natif self-contained
-        run: dotnet publish cotk-src/tools/ToggleConsole/ToggleConsole.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o stage/ToggleConsole
-
-      - name: Smoke outil (aucun client requis)
-        shell: pwsh
-        run: |
-          & .\stage\ToggleConsole\ToggleConsole.exe --help | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw '--help != 0' }
-          & .\stage\ToggleConsole\ToggleConsole.exe --watch
-          if ($LASTEXITCODE -ne 2) { throw '--watch sans --patch doit refuser (2)' }
-          & .\stage\ToggleConsole\ToggleConsole.exe --native-ui --verify
-          if ($LASTEXITCODE -ne 1) { throw '--native-ui --verify sans client doit sortir 1 vite' }
 
       - name: Completer le dossier de publication (fonts, config, docs)
         shell: pwsh
@@ -79,6 +44,16 @@ jobs:
           Copy-Item JOUE.bat stage/
           Copy-Item ClientConfig.example.ini stage/
           Copy-Item README.md stage/
+
+      - name: Garde-fou console F8 admin (jamais dans le paquet public)
+        shell: pwsh
+        run: |
+          # La console F8 (ToggleConsole) est distribuee HORS release, a la main,
+          # aux seuls admins. Le launcher ne la lance que si role=admin ET
+          # ToggleConsole\ToggleConsole.exe present a cote de lui. Le ZIP public
+          # et le setup ne doivent donc jamais la contenir.
+          $leak = Get-ChildItem stage -Recurse -File | Where-Object { $_.Name -like 'ToggleConsole*' }
+          if ($leak) { $leak.FullName; throw 'ToggleConsole present dans stage/ : refus de publier la console admin a tous les joueurs.' }
 
       - name: Zip pour l'auto-update des launchers existants
         shell: pwsh
@@ -186,5 +161,5 @@ jobs:
         env:
           VER: ${{ steps.meta.outputs.ver }}
         run: |
-          git tag "launcher-v$VER" --force || true
-          git push origin "launcher-v$VER" --force || true
+          git tag "launcher-v$VER"
+          git push origin "launcher-v$VER"

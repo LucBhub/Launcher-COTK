@@ -38,6 +38,57 @@ public sealed class GameLauncherTests
         }
     }
 
+    [Fact]
+    public void BuildClientConfig_ForcesLocalLogLevelUnderLoggingSection()
+    {
+        var previous = Environment.GetEnvironmentVariable("COTK_CLIENT_LOG_LEVEL");
+        Environment.SetEnvironmentVariable("COTK_CLIENT_LOG_LEVEL", null);
+        try
+        {
+            var source = new[]
+            {
+                "World=None",
+                "[Logging]",
+                "Address=",
+                "LocalLogLevel=9",
+                "[InfiniteLoopMonitor]",
+                "TimeoutSeconds=900",
+                " localloglevel=7",
+            };
+
+            var result = GameLauncher.BuildClientConfig(source, "lp2.t");
+
+            Assert.Single(result, line => line.TrimStart().StartsWith("LocalLogLevel=", StringComparison.OrdinalIgnoreCase));
+            var header = result.IndexOf("[Logging]");
+            Assert.Equal("LocalLogLevel=4", result[header + 1]);
+            Assert.Contains("Address=", result);
+            Assert.Contains("TimeoutSeconds=900", result);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("COTK_CLIENT_LOG_LEVEL", previous);
+        }
+    }
+
+    [Fact]
+    public void BuildClientConfig_AddsLoggingSectionWhenMissing()
+    {
+        var previous = Environment.GetEnvironmentVariable("COTK_CLIENT_LOG_LEVEL");
+        Environment.SetEnvironmentVariable("COTK_CLIENT_LOG_LEVEL", "9");
+        try
+        {
+            var result = GameLauncher.BuildClientConfig(new[] { "World=None", "[Environment]", "Sku=2" }, "lp2.t");
+
+            var header = result.IndexOf("[Logging]");
+            Assert.True(header > 0);
+            Assert.Equal("LocalLogLevel=9", result[header + 1]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("COTK_CLIENT_LOG_LEVEL", previous);
+        }
+    }
+
     [Theory]
     [InlineData("BaseApp::Run - beginning to run the app", 0)]
     [InlineData("newState=GAMESTATE_TITLESCREEN", 1)]

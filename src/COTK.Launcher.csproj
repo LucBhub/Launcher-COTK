@@ -10,7 +10,7 @@
     <RootNamespace>COTK.Launcher</RootNamespace>
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
     <ApplicationIcon>cotk.ico</ApplicationIcon>
-    <Version>0.10.5</Version>
+    <Version>0.10.6</Version>
     <Product>COTK</Product>
     <AssemblyTitle>COTK Launcher</AssemblyTitle>
     <FileDescription>Launcher COTK - H1Z1 KotK Pre-Season 3</FileDescription>
