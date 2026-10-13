@@ -15,6 +15,10 @@ restauration de *H1Z1: King of the Kill* Pre-Season 3 (build 0.23.4.161178).
   confirmation de taille, téléchargement avec reprise HTTP Range et % en direct
 - **Mise à jour différentielle** : compare un catalogue SHA-256 fichier par
   fichier, ne télécharge que les différences (4 en parallèle)
+- **Réglages conservés** : les fichiers `.ini` à la racine, `SoundSettings.xml`,
+  les profils `InputProfile_*.xml` et `UI/Settings/` sont préservés pendant les
+  mises à jour différentielles et le remplacement par l'archive complète.
+  Les valeurs par défaut ne sont installées que si le fichier est absent.
 - **Auto-update du launcher** : télécharge le zip, extrait via un updater
   temporaire, remplace les fichiers, relance
 - **Console développeur F8** (comptes admin et moderateur) : `/help`, `/give`, `/spawncar`, `/godmode`... — le launcher propose INSTALLER / METTRE À JOUR via un bouton après connexion (téléchargement staff-only depuis l'API, SHA-256 vérifié)
@@ -59,9 +63,10 @@ Prérequis : Windows + .NET 10 SDK.
 dotnet test tests/COTK.Launcher.Tests.csproj
 ```
 
-29 tests couvrant : config client, détection de stage, retry logic,
+53 tests couvrant : config client, détection de stage, retry logic,
 delta update (sandbox + serveur HTTP simulé), reprise de téléchargement,
-régression 416, BOM settings, validation d'archive updater.
+régression 416, BOM settings, validation d'archive updater, conservation des
+réglages/touches/son/graphismes, repli sur archive et rollback sans perte de données.
 
 ## Assistant d'installation (Inno Setup)
 

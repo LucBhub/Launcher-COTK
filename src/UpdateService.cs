@@ -265,8 +265,8 @@ _apiUrl = LauncherConfig.ApiUrl.TrimEnd('/');
 
     /// <summary>Mise a jour differentielle : compare le catalogue publie aux
     /// fichiers locaux, ne telecharge que les differences (4 en parallele),
-    /// supprime les fichiers disparus. Les donnees joueur (ClientConfig.ini,
-    /// Logs, marqueur) ne sont jamais touchees.</summary>
+    /// supprime les fichiers disparus. Les reglages et profils du joueur deja
+    /// presents ne sont ni hashes, ni remplaces, ni supprimes.</summary>
     private async Task<ClientSyncResult> SyncClientDeltaAsync(
         ClientRelease release,
         IProgress<string>? progress,
@@ -305,7 +305,8 @@ _apiUrl = LauncherConfig.ApiUrl.TrimEnd('/');
             known.Add(entry.Path);
 
             var local = Path.Combine(clientDir, entry.Path.Replace('/', '\\'));
-            if (!(File.Exists(local)
+            if (!(IsPlayerData(entry.Path) && File.Exists(local))
+                && !(File.Exists(local)
                 && new FileInfo(local).Length == entry.Size
                 && string.Equals(await Sha256Async(local), entry.Sha256, StringComparison.OrdinalIgnoreCase)))
                 toDownload.Add(entry);
@@ -435,10 +436,20 @@ _apiUrl = LauncherConfig.ApiUrl.TrimEnd('/');
 
     private static bool IsPlayerData(string relativePath)
     {
-        return relativePath.Equals("ClientConfig.ini", StringComparison.OrdinalIgnoreCase)
+        relativePath = relativePath.Replace('\\', '/');
+        // Les .ini a la racine sont des configurations (jeu, rendu, launcher).
+        // Les profils peuvent etre personnalises, pas seulement _User.xml.
+        var rootSettings = !relativePath.Contains('/')
+            && (relativePath.EndsWith(".ini", StringComparison.OrdinalIgnoreCase)
+                || relativePath.Equals("SoundSettings.xml", StringComparison.OrdinalIgnoreCase)
+                || (relativePath.StartsWith("InputProfile_", StringComparison.OrdinalIgnoreCase)
+                    && relativePath.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)));
+        return rootSettings
             || relativePath.Equals(".cotk-client-version", StringComparison.OrdinalIgnoreCase)
             || relativePath.Equals("Logs", StringComparison.OrdinalIgnoreCase)
-            || relativePath.StartsWith("Logs/", StringComparison.OrdinalIgnoreCase);
+            || relativePath.StartsWith("Logs/", StringComparison.OrdinalIgnoreCase)
+            || relativePath.Equals("UI/Settings", StringComparison.OrdinalIgnoreCase)
+            || relativePath.StartsWith("UI/Settings/", StringComparison.OrdinalIgnoreCase);
     }
 
     internal async Task ScheduleLauncherUpdateAsync(
@@ -719,6 +730,7 @@ _apiUrl = LauncherConfig.ApiUrl.TrimEnd('/');
         var clientDir = GameLauncher.ClientDir;
         var stage = clientDir.TrimEnd(Path.DirectorySeparatorChar) + ".update-" + Guid.NewGuid().ToString("N");
         var backup = clientDir.TrimEnd(Path.DirectorySeparatorChar) + ".backup-" + Guid.NewGuid().ToString("N");
+        var installed = false;
         try
         {
             ExtractZipSafely(archive, stage);
@@ -734,23 +746,32 @@ _apiUrl = LauncherConfig.ApiUrl.TrimEnd('/');
                 throw new UpdateException(
                     $"Le dossier client choisi ({clientDir}) existe et n'est pas vide. Choisissez un emplacement dedie ou videz-le.");
 
+            // Toute erreur de copie (fichier verrouille, disque plein...) doit
+            // survenir avant le remplacement de l'installation du joueur.
+            RestoreUserFiles(clientDir, stage);
+            await File.WriteAllTextAsync(Path.Combine(stage, ".cotk-client-version"), release.Version + Environment.NewLine, cancellationToken);
             Directory.CreateDirectory(Path.GetDirectoryName(clientDir)!);
             if (Directory.Exists(clientDir))
                 Directory.Move(clientDir, backup);
             Directory.Move(stage, clientDir);
-            RestoreUserFiles(backup, clientDir);
-            await File.WriteAllTextAsync(Path.Combine(clientDir, ".cotk-client-version"), release.Version + Environment.NewLine, cancellationToken);
             progress?.Report($"Client {release.Version} installÃ©.");
+            installed = true;
         }
         catch
         {
-            if (!Directory.Exists(clientDir) && Directory.Exists(backup)) Directory.Move(backup, clientDir);
+            if (Directory.Exists(backup))
+            {
+                if (Directory.Exists(clientDir)) Directory.Delete(clientDir, true);
+                Directory.Move(backup, clientDir);
+            }
             throw;
         }
         finally
         {
             try { Directory.Delete(stage, true); } catch { }
-            try { Directory.Delete(backup, true); } catch { }
+            // Si le rollback lui-meme echoue, conserver l'ancienne installation.
+            if (installed)
+                try { Directory.Delete(backup, true); } catch { }
             try { File.Delete(archive); } catch { }
         }
     }
@@ -758,19 +779,13 @@ _apiUrl = LauncherConfig.ApiUrl.TrimEnd('/');
     private static void RestoreUserFiles(string backup, string clientDir)
     {
         if (!Directory.Exists(backup)) return;
-        foreach (var relative in new[] { "ClientConfig.ini", "Logs" })
+        foreach (var source in Directory.EnumerateFiles(backup, "*", SearchOption.AllDirectories))
         {
-            var source = Path.Combine(backup, relative);
+            var relative = Path.GetRelativePath(backup, source);
+            if (!IsPlayerData(relative)) continue;
             var destination = Path.Combine(clientDir, relative);
-            if (File.Exists(source))
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                File.Copy(source, destination, true);
-            }
-            else if (Directory.Exists(source))
-            {
-                CopyDirectory(source, destination);
-            }
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination, true);
         }
     }
 

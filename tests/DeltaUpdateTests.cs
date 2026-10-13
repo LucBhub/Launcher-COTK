@@ -134,6 +134,210 @@ public sealed class DeltaUpdateTests : IDisposable
         public void Report(string value) => Messages.Add(value);
     }
 
+    // Le catalogue public contient aussi les reglages par defaut. Les valeurs
+    // du joueur doivent survivre meme si elles different, ou si leur fichier
+    // n'est plus catalogue. Les profils personnalises et la casse sont couverts.
+    private static readonly string[] PlayerSettingsPaths =
+    [
+        "ClientConfig.ini", "UserOptions.ini", "InputProfile_User.xml",
+        "InputProfile_Default.xml", "InputProfile_UIWhiteList.xml", "InputProfile_Custom.xml",
+        "SoundSettings.xml", "Graphics.ini", "DeepGraphicsWrapper.ini", "LaunchPad-user.ini",
+        "UI/Settings/reticle.xml", "UI/Settings/layout/container.xml", "Logs/joueur.log",
+    ];
+
+    private Dictionary<string, byte[]> WritePlayerSettings()
+    {
+        var settings = new Dictionary<string, byte[]>();
+        foreach (var rel in PlayerSettingsPaths)
+        {
+            var path = Path.Combine(_clientDir, rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var bytes = Encoding.UTF8.GetPreamble().Concat(
+                Encoding.UTF8.GetBytes($"MES REGLAGES: {rel}\r\nVolume=0.37\r\nJump=F\r\n")).ToArray();
+            File.WriteAllBytes(path, bytes);
+            settings[rel] = bytes;
+        }
+        return settings;
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DeltaUpdate_PreservesAllSettings_WhenCataloguedOrOmitted(bool catalogued)
+    {
+        var before = WritePlayerSettings();
+        File.WriteAllText(Path.Combine(_clientDir, "H1Z1.exe"), "same-exe");
+        File.WriteAllText(Path.Combine(_clientDir, ".cotk-client-version"), "1.0.0");
+        File.WriteAllText(Path.Combine(_clientDir, "extra.bin"), "obsolete");
+        var files = new List<object>
+        {
+            new { path = "H1Z1.exe", size = 8, sha256 = Sha256Of("same-exe") },
+            new { path = "Locale/fr_fr_data.dat", size = 6, sha256 = Sha256Of("market") },
+        };
+        if (catalogued)
+            files.AddRange(PlayerSettingsPaths.Select(rel => (object)new
+            {
+                path = rel.ToUpperInvariant(), size = 7, sha256 = Sha256Of("DEFAULT"),
+            }));
+        _http.Map("/client-files.json", JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1, version = "2.0.0", baseUrl = $"{_http.BaseUrl}/client/", files,
+        }));
+        _http.Map("/client/Locale/fr_fr_data.dat", "market");
+        var zip = ZipOf(("H1Z1.exe", "fallback"));
+        _http.Map("/client-full.zip", zip);
+        var release = new ClientRelease("2.0.0", $"{_http.BaseUrl}/client-full.zip",
+            Convert.ToHexString(SHA256.HashData(zip)), zip.Length, FilesUrl: $"{_http.BaseUrl}/client-files.json");
+
+        var result = await new UpdateService().EnsureClientAsync(release, null, TestContext.Current.CancellationToken);
+
+        foreach (var (rel, bytes) in before)
+        {
+            Assert.Equal(bytes, File.ReadAllBytes(Path.Combine(_clientDir, rel)));
+            Assert.Equal(0, _http.RequestsFor("/client/" + rel.ToUpperInvariant()));
+        }
+        Assert.False(result.FullArchive);
+        Assert.Equal(1, result.FilesDownloaded);
+        Assert.Equal(6, result.BytesDownloaded);
+        Assert.Equal(0, _http.RequestsFor("/client-full.zip"));
+        Assert.Equal("market", File.ReadAllText(Path.Combine(_clientDir, "Locale/fr_fr_data.dat")));
+        Assert.False(File.Exists(Path.Combine(_clientDir, "extra.bin")));
+        Assert.Equal("2.0.0", File.ReadAllText(Path.Combine(_clientDir, ".cotk-client-version")).Trim());
+    }
+
+    [Fact]
+    public async Task DeltaUpdate_DoesNotOpenExistingSettings_SeedsMissingDefaults()
+    {
+        Directory.CreateDirectory(_clientDir);
+        File.WriteAllText(Path.Combine(_clientDir, "H1Z1.exe"), "same-exe");
+        var settings = Path.Combine(_clientDir, "UserOptions.ini");
+        File.WriteAllText(settings, "my-settings");
+        _http.Map("/client-files.json", JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1, version = "2.0.0", baseUrl = $"{_http.BaseUrl}/client/",
+            files = new[]
+            {
+                new { path = "H1Z1.exe", size = 8, sha256 = Sha256Of("same-exe") },
+                new { path = "UserOptions.ini", size = 11, sha256 = Sha256Of("new-default") },
+                new { path = "InputProfile_User.xml", size = 7, sha256 = Sha256Of("DEFAULT") },
+            },
+        }));
+        _http.Map("/client/InputProfile_User.xml", "DEFAULT");
+        var zip = ZipOf(("H1Z1.exe", "fallback"), ("UserOptions.ini", "new-default"));
+        _http.Map("/client-full.zip", zip);
+        var release = new ClientRelease("2.0.0", $"{_http.BaseUrl}/client-full.zip",
+            Convert.ToHexString(SHA256.HashData(zip)), zip.Length, FilesUrl: $"{_http.BaseUrl}/client-files.json");
+        ClientSyncResult result;
+        // Meme taille mais contenu different : le hachage tenterait d'ouvrir
+        // le fichier verrouille et ferait echouer le delta avant ce correctif.
+        using (var locked = new FileStream(settings, FileMode.Open, FileAccess.Read, FileShare.None))
+            result = await new UpdateService().EnsureClientAsync(release, null, TestContext.Current.CancellationToken);
+
+        Assert.False(result.FullArchive);
+        Assert.Equal(1, result.FilesDownloaded);
+        Assert.Equal("my-settings", File.ReadAllText(settings));
+        Assert.Equal("DEFAULT", File.ReadAllText(Path.Combine(_clientDir, "InputProfile_User.xml")));
+        Assert.Equal(0, _http.RequestsFor("/client/UserOptions.ini"));
+        Assert.Equal(0, _http.RequestsFor("/client-full.zip"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FullArchive_AndDeltaFallback_PreserveAllSettings(bool fallback)
+    {
+        var before = WritePlayerSettings();
+        File.WriteAllText(Path.Combine(_clientDir, "H1Z1.exe"), "old-exe");
+        var archiveFiles = PlayerSettingsPaths.Select(rel => (rel.ToUpperInvariant(), "DEFAULT")).ToList();
+        archiveFiles.Add(("H1Z1.exe", "new-exe"));
+        archiveFiles.Add(("Locale/fr_fr_data.dat", "market"));
+        archiveFiles.Add(("UI/Settings/new-widget.xml", "default-widget"));
+        var zip = ZipOf(archiveFiles.ToArray());
+        _http.Map("/client-full.zip", zip);
+        if (fallback) _http.Map("/client-files.json", "invalid-json");
+        var release = new ClientRelease("2.0.0", $"{_http.BaseUrl}/client-full.zip",
+            Convert.ToHexString(SHA256.HashData(zip)), zip.Length,
+            FilesUrl: fallback ? $"{_http.BaseUrl}/client-files.json" : null);
+
+        var result = await new UpdateService().EnsureClientAsync(release, null, TestContext.Current.CancellationToken);
+
+        foreach (var (rel, bytes) in before)
+            Assert.Equal(bytes, File.ReadAllBytes(Path.Combine(_clientDir, rel)));
+        Assert.True(result.FullArchive);
+        Assert.Equal("new-exe", File.ReadAllText(Path.Combine(_clientDir, "H1Z1.exe")));
+        Assert.Equal("market", File.ReadAllText(Path.Combine(_clientDir, "Locale/fr_fr_data.dat")));
+        Assert.Equal("default-widget", File.ReadAllText(Path.Combine(_clientDir, "UI/Settings/new-widget.xml")));
+        Assert.Equal("2.0.0", File.ReadAllText(Path.Combine(_clientDir, ".cotk-client-version")).Trim());
+    }
+
+    [Fact]
+    public async Task FullArchive_CannotLoseSettings_WhenTheirCopyFails()
+    {
+        Directory.CreateDirectory(_clientDir);
+        File.WriteAllText(Path.Combine(_clientDir, "H1Z1.exe"), "old-exe");
+        File.WriteAllBytes(Path.Combine(_clientDir, "UserOptions.ini"), [0xEF, 0xBB, 0xBF, 0x42]);
+        File.WriteAllText(Path.Combine(_clientDir, ".cotk-client-version"), "1.0.0");
+        // Le chemin cible est un repertoire : la copie de UserOptions.ini doit
+        // echouer AVANT de remplacer l'ancien dossier et ses donnees joueur.
+        var zip = ZipOf(("H1Z1.exe", "new-exe"), ("UserOptions.ini/conflict.bin", "conflict"));
+        _http.Map("/client-full.zip", zip);
+        var release = new ClientRelease("2.0.0", $"{_http.BaseUrl}/client-full.zip",
+            Convert.ToHexString(SHA256.HashData(zip)), zip.Length);
+
+        var error = await Record.ExceptionAsync(() => new UpdateService().EnsureClientAsync(
+            release, null, TestContext.Current.CancellationToken));
+        Assert.True(error is IOException or UnauthorizedAccessException, $"Erreur de copie attendue, obtenu : {error}");
+
+        Assert.Equal("old-exe", File.ReadAllText(Path.Combine(_clientDir, "H1Z1.exe")));
+        Assert.Equal(new byte[] { 0xEF, 0xBB, 0xBF, 0x42 }, File.ReadAllBytes(Path.Combine(_clientDir, "UserOptions.ini")));
+        Assert.Equal("1.0.0", File.ReadAllText(Path.Combine(_clientDir, ".cotk-client-version")));
+    }
+
+    [Fact]
+    public async Task FreshInstall_InitialisesDefaultSettings()
+    {
+        var files = PlayerSettingsPaths.Select(rel => (rel, "DEFAULT")).ToList();
+        files.Add(("H1Z1.exe", "new-exe"));
+        var zip = ZipOf(files.ToArray());
+        _http.Map("/client-full.zip", zip);
+        var release = new ClientRelease("2.0.0", $"{_http.BaseUrl}/client-full.zip",
+            Convert.ToHexString(SHA256.HashData(zip)), zip.Length);
+
+        await new UpdateService().EnsureClientAsync(release, null, TestContext.Current.CancellationToken);
+
+        foreach (var rel in PlayerSettingsPaths)
+            Assert.Equal("DEFAULT", File.ReadAllText(Path.Combine(_clientDir, rel)));
+    }
+
+    private sealed class ThrowOnInstallProgress : IProgress<string>
+    {
+        public void Report(string value)
+        {
+            if (value.StartsWith("Client 2.0.0"))
+                throw new InvalidOperationException("Simulated failure after directory swap");
+        }
+    }
+
+    [Fact]
+    public async Task FullArchive_RollsBackSettings_WhenFailureOccursAfterSwap()
+    {
+        var before = WritePlayerSettings();
+        File.WriteAllText(Path.Combine(_clientDir, "H1Z1.exe"), "old-exe");
+        File.WriteAllText(Path.Combine(_clientDir, ".cotk-client-version"), "1.0.0");
+        var zip = ZipOf(("H1Z1.exe", "new-exe"), ("UserOptions.ini", "DEFAULT"));
+        _http.Map("/client-full.zip", zip);
+        var release = new ClientRelease("2.0.0", $"{_http.BaseUrl}/client-full.zip",
+            Convert.ToHexString(SHA256.HashData(zip)), zip.Length);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new UpdateService().EnsureClientAsync(
+            release, new ThrowOnInstallProgress(), TestContext.Current.CancellationToken));
+
+        foreach (var (rel, bytes) in before)
+            Assert.Equal(bytes, File.ReadAllBytes(Path.Combine(_clientDir, rel)));
+        Assert.Equal("old-exe", File.ReadAllText(Path.Combine(_clientDir, "H1Z1.exe")));
+        Assert.Equal("1.0.0", File.ReadAllText(Path.Combine(_clientDir, ".cotk-client-version")));
+    }
+
     // ------------------------------------------------------------------
     // 1b. L'analyse locale affiche un POURCENTAGE jusqu'a 100 %, et le resultat dit ce qui a ete fait.
     // ------------------------------------------------------------------
