@@ -1,7 +1,11 @@
 # COTK · Launcher Next
 
-Refonte indépendante du launcher dans **`D:\projects\COTK\tools\launcher-next`**.
-L'ancien launcher, dans `D:\projects\zemu\launcher`, reste intact.
+Launcher WPF COTK, développé dans ce dépôt sur la branche **`launcher-next`**.
+Le clone actif du poste est **`D:\projects\Launcher-COTK`** ; `main` contient l'ancien launcher WinForms.
+
+**Agents et contributeurs : lire [AGENTS.md](AGENTS.md), puis le
+[guide de développement et de publication](docs/DEVELOPMENT.md).** Un push de code sur `launcher-next`
+déclenche une publication en production ; les changements limités à la documentation n'en déclenchent pas.
 
 ## Voir la refonte
 
@@ -127,7 +131,8 @@ expiré, mauvais produit/canal, catalogue non épinglé, enveloppe illisible.
 
 ## Sécurité et état de livraison
 
-Cette livraison est une **refonte de développement exécutable**, pas encore une release publique signée.
+Le launcher est publié avec un manifeste signé et une auto-mise à jour. Le binaire Windows n'est pas
+signé Authenticode (choix du projet) : distinguer ces deux signatures.
 
 - TLS standard Windows, aucun contournement de certificat ; HTTP limité à la boucle locale de développement.
 - Hôtes de téléchargement limités à `api.cotk.fr` et `dl.cotk.fr` ; redirections automatiques refusées.
@@ -264,18 +269,18 @@ n'est écrasé. Le workflow ne répond pas aux pull requests et ne tourne que da
 
 ### Commandes locales de secours
 
-Depuis le dossier `tools/launcher-next` du poste de publication, choisir un numéro supérieur à la
-version en production (exemple : `1.0.3` après `1.0.2`) :
+Depuis le dossier `tools/launcher-next` du poste de publication, remplacer `X.Y.Z` par un numéro
+strictement supérieur à la version réellement en production :
 
 ```powershell
 # Essai complet local, sans envoi ni modification de production
-python tools/release.py 1.0.3 --dry-run
+python tools/release.py X.Y.Z --dry-run
 
 # Préparer et envoyer le paquet, sans l'annoncer aux joueurs
-python tools/release.py 1.0.3
+python tools/release.py X.Y.Z
 
 # Déployer la version préparée, puis synchroniser Git
-python tools/release.py 1.0.3 --go-live --notes "Description des changements"
+python tools/release.py X.Y.Z --go-live --notes "Description des changements"
 ```
 
 **Préparation automatique :** mise à jour des numéros dans le projet et `AssemblyInfo`, build Roslyn,
@@ -300,7 +305,7 @@ c'est `--go-live` qui effectue la publication directement. En cas d'échec Git a
 publication, le script précise que la version est déjà en ligne ; pour reprendre seulement les sources :
 
 ```powershell
-python tools/release.py 1.0.3 --push-sources
+python tools/release.py X.Y.Z --push-sources
 ```
 
 L'orchestrateur et les scripts SSH/signature restent locaux au poste de publication : ils ne sont
@@ -347,7 +352,8 @@ l'espace disque.
 manifeste du serveur est identique à la dernière publication approuvée ; sinon il refuse (code 2) : signer
 automatiquement ce que dit le serveur annulerait l'intérêt de la signature. Une tâche planifiée utilisateur
 (« COTK Renew Signed Manifest », chaque jour à 12 h et à l'ouverture de session) l'exécute. Une **nouvelle release du
-client ou du launcher** se signe à la main : `python tools/publish-signed-manifest.py`.
+launcher** est signée par le workflow automatique ; une **nouvelle release du client du jeu**, gérée séparément,
+demande aussi la republication signée par les outils d'exploitation.
 
 Preuve rejouable : `python tools/e2e-migration.py` (`--real-zip` pour tester le paquet réellement servi par
 `dl.cotk.fr`) — télécharge la vraie 0.10.10 de production, l'installe dans un bac à sable (`%TEMP%\cotk-e2e`), la fait
