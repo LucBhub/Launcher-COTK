@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Refonte du launcher COTK (WPF, 100 % code : aucun XAML a compiler, donc
+       le meme arbre se compile avec le SDK (CI) ou avec Roslyn seul (build.ps1)). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>COTK.Launcher.Next</AssemblyName>
+    <RootNamespace>COTK.Next</RootNamespace>
+    <ApplicationIcon>assets\cotk.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.0.2</Version>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Product>COTK</Product>
+    <AssemblyTitle>COTK Launcher</AssemblyTitle>
+    <FileDescription>Launcher COTK - Crown of the King</FileDescription>
+    <Company>COTK</Company>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <TieredPGO>true</TieredPGO>
+    <TieredCompilationQuickJitForLoops>true</TieredCompilationQuickJitForLoops>
+    <AutoreleasePoolSupport>false</AutoreleasePoolSupport>
+  </PropertyGroup>
+
+  <!-- UseWPF retire ces deux usings implicites ; build.ps1 (Roslyn seul) les fournit deja. -->
+  <ItemGroup>
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="src\**\*.cs" />
+    <None Update="assets\fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" TargetPath="fonts\%(Filename)%(Extension)" />
+    <None Update="assets\fonts\OFL-Oswald.txt" CopyToOutputDirectory="PreserveNewest" TargetPath="fonts\OFL-Oswald.txt" />
+    <None Update="assets\ClientConfig.example.ini" CopyToOutputDirectory="PreserveNewest" TargetPath="ClientConfig.example.ini" />
+    <None Update="assets\cotk.ico" CopyToOutputDirectory="PreserveNewest" TargetPath="cotk.ico" />
+    <None Update="assets\ranks\*.png" CopyToOutputDirectory="PreserveNewest" TargetPath="ranks\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>
+
+

@@ -1,0 +1,11 @@
+out/
+bin/
+obj/
+publish/
+release/
+.gitnexus/
+docs/captures/logs/
+docs/captures/settings/
+docs/captures/i18n-logs/
+docs/captures/i18n-settings/
+publish-*/

@@ -1,0 +1,122 @@
+[
+  {
+    "tier": 1,
+    "resource": "icon_tier_01.dds",
+    "pack": "Assets_119.pack",
+    "offset": 19075843,
+    "length": 59728,
+    "crc32": "0a4b9ee3",
+    "sourceSha256": "0b4491a946207ce73085b10375f3b258356f550f585b0086f6582d824f2cc4d2",
+    "pngSha256": "d639c25f68e664e1be9b64c574b3afb1664f9e2810664e28a9d3a5140507eafe",
+    "size": [
+      440,
+      100
+    ],
+    "crop": [
+      170,
+      0,
+      270,
+      100
+    ]
+  },
+  {
+    "tier": 2,
+    "resource": "icon_tier_02.dds",
+    "pack": "Assets_095.pack",
+    "offset": 19928795,
+    "length": 59728,
+    "crc32": "4b4d9ea8",
+    "sourceSha256": "11fba9c7c9d9ce2a1db0f29c06856fc35251d7d84d9c4e9f189020bc92092aaa",
+    "pngSha256": "5ab2e7b80520fa5434dc93173020d837c108c73ea29e45b5b3517bc51bc5be1a",
+    "size": [
+      440,
+      100
+    ],
+    "crop": [
+      170,
+      0,
+      270,
+      100
+    ]
+  },
+  {
+    "tier": 3,
+    "resource": "icon_tier_03.dds",
+    "pack": "Assets_201.pack",
+    "offset": 23006394,
+    "length": 59728,
+    "crc32": "2fc8d439",
+    "sourceSha256": "4230525b7e412cf1db9ce401c5244d0af21bcc2ff3335c72cb389e1b5f29655b",
+    "pngSha256": "78cb633166c207f263a3bdc2b2f472d1d232c7d9cbff0641b142bed618b83614",
+    "size": [
+      440,
+      100
+    ],
+    "crop": [
+      170,
+      0,
+      270,
+      100
+    ]
+  },
+  {
+    "tier": 4,
+    "resource": "icon_tier_04.dds",
+    "pack": "Assets_158.pack",
+    "offset": 35965486,
+    "length": 59728,
+    "crc32": "a7d696fe",
+    "sourceSha256": "e689a9e97ac33b62f1b1d5e8b44129a944cd950181fca43be246249f0c12a562",
+    "pngSha256": "e80d4d2e76977ba66639a7e27397fe33b768a9a4b2c3471431c7ffa14539ed22",
+    "size": [
+      440,
+      100
+    ],
+    "crop": [
+      170,
+      0,
+      270,
+      100
+    ]
+  },
+  {
+    "tier": 5,
+    "resource": "icon_tier_05.dds",
+    "pack": "Assets_151.pack",
+    "offset": 16660205,
+    "length": 59728,
+    "crc32": "b11a2473",
+    "sourceSha256": "70a6a2453d7a96651fcb49d1dc970e0086a7954db6e7a49e6860a944c406ef0e",
+    "pngSha256": "cbacbbede32144c7570e578ad70ddd8dc4c689a14623f2c1b7f54d1dc8fe5d0b",
+    "size": [
+      440,
+      100
+    ],
+    "crop": [
+      170,
+      0,
+      270,
+      100
+    ]
+  },
+  {
+    "tier": 6,
+    "resource": "icon_tier_06.dds",
+    "pack": "Assets_173.pack",
+    "offset": 43590822,
+    "length": 59728,
+    "crc32": "04416b42",
+    "sourceSha256": "f00aeb86b17105b173203f7f67906484729345bc2b469bcd2b7fcc314995f0b3",
+    "pngSha256": "ac68ef6ebc15096faa599b8a4205289f5919883841f74cbfa5e32f9642e37175",
+    "size": [
+      440,
+      100
+    ],
+    "crop": [
+      170,
+      0,
+      270,
+      100
+    ]
+  }
+]

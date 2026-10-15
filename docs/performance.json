@@ -1,0 +1,22 @@
+{
+    "date":  "2026-10-15T09:33:42.2583769+02:00",
+    "logicalProcessors":  16,
+    "samples":  [
+                    {
+                        "state":  "home-animated-foreground",
+                        "seconds":  12.01,
+                        "cpuOneCorePercent":  23.29,
+                        "cpuHostPercent":  1.46,
+                        "workingSetMiB":  224.5,
+                        "privateMiB":  254
+                    },
+                    {
+                        "state":  "minimized",
+                        "seconds":  12.01,
+                        "cpuOneCorePercent":  1.82,
+                        "cpuHostPercent":  0.11,
+                        "workingSetMiB":  226.3,
+                        "privateMiB":  241.1
+                    }
+                ]
+}
