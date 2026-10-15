@@ -367,7 +367,8 @@ d'identification et le retire à la fin ; il refuse de démarrer si un vrai jeto
 la fait avec `--dry-run`, sauvegarde du manifeste serveur, remplacement atomique du seul bloc `launcher`, et
 `--rollback`) — à la main, cela revient à :
 téléverser le zip dans le dossier `launcher-next/` du serveur de téléchargement, puis remplacer le bloc `launcher` du
-`manifest.json` de production (`version`, `downloadUrl`, `sha256`, `sizeBytes` ; garder `setupUrl`) — l'API relit
+`manifest.json` de production (`version`, `downloadUrl`, `sha256`, `sizeBytes`, `setupUrl` pointant sur le setup de la
+version publiée) — l'API relit
 ce fichier à chaque requête, l'effet est immédiat. Relancer ensuite `tools/publish-signed-manifest.py`. Les scripts
 d'exploitation serveur (déploiement de l'API, publication du manifeste signé, preuves de production) restent dans le
 dépôt privé du projet et ne sont pas publiés dans ce dépôt public.

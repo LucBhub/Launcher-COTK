@@ -66,6 +66,27 @@ def production():
         return json.load(response)
 
 
+def setup_name(release_version):
+    return f'COTK-Launcher-Next-Setup-{release_version}.exe'
+
+
+def release_artifacts(release_version, release_dir):
+    """Every file a release owns: the update zip and the fresh-install setup, with proofs."""
+    archive = release_dir / f'COTK-Launcher-Next-{release_version}-win-x64.zip'
+    setup = release_dir / setup_name(release_version)
+    candidates = [archive, Path(str(archive) + '.sha256'), Path(str(archive) + '.prepared.json'),
+                  setup, Path(str(setup) + '.sha256')]
+    return [path for path in candidates if path.exists()]
+
+
+def reset_unproven_packages(release_version, release_dir):
+    """Drop job-owned build outputs that never reached a validated receipt, never anything else."""
+    archive = release_dir / f'COTK-Launcher-Next-{release_version}-win-x64.zip'
+    if archive.exists() and not Path(str(archive) + '.prepared.json').exists():
+        for path in release_artifacts(release_version, release_dir):
+            path.unlink()
+
+
 def copy_checkout(workspace, source):
     # Do not use "publish*": it also matches tools/publisher.ps1, which is required for signing.
     shutil.copytree(workspace, source, ignore=shutil.ignore_patterns('.git', '__pycache__', 'out', 'bin', 'obj', 'release'))
@@ -163,9 +184,7 @@ def main():
             if version(live['version']) >= version(release_version):
                 raise RuntimeError('A newer version is already in production.')
             # A failed test may leave an unvalidated local zip; only job-owned files with no successful receipt are reset.
-            if archive.exists() and not Path(str(archive) + '.prepared.json').exists():
-                archive.unlink()
-                Path(str(archive) + '.sha256').unlink(missing_ok=True)
+            reset_unproven_packages(release_version, archive.parent)
             run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test*release.py'], source)
             run([sys.executable, 'tools/release.py', release_version], source)
             if remote_head(workspace) != sha:
@@ -184,9 +203,8 @@ def main():
         state_file.write_text(json.dumps(state, indent=2), encoding='utf-8')
         write_result(state, artifact_dir)
         if archive.exists():
-            for path in archive.parent.glob(archive.name + '*'):
-                if path.name.endswith(('.zip', '.sha256', '.prepared.json')):
-                    shutil.copy2(path, artifact_dir / path.name)
+            for path in release_artifacts(release_version, archive.parent):
+                shutil.copy2(path, artifact_dir / path.name)
     for relative in ('out', 'bin', 'obj', f'publish-{release_version}'):
         shutil.rmtree(source / relative, ignore_errors=True)
 

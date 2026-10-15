@@ -52,11 +52,50 @@ class PushPublisherChecks(unittest.TestCase):
     def test_unreadable_session_prevents_running_the_update_test(self):
         args = ['e2e-update.py', '--to-zip', 'fake.zip', '--to-version', '1.0.4', '--keep-existing-session']
         with patch.object(sys, 'argv', args), patch.object(update, 'run') as execute, \
-             patch.object(update.e2e, 'cred', side_effect=lambda action: 'True' if action == 'exists' else '') as credentials:
+             patch.object(update.e2e, 'ps'), patch.object(update.e2e, 'cred', side_effect=lambda action: 'True' if action == 'exists' else '') as credentials:
             with self.assertRaises(SystemExit):
                 update.main()
         execute.assert_not_called()
         self.assertTrue(all(call.args[0] in ('exists', 'fingerprint') for call in credentials.call_args_list))
+
+    def test_release_artifacts_include_zip_proof_and_setup(self):
+        with tempfile.TemporaryDirectory(prefix='cotk-ci-artifacts-') as root:
+            release_dir = Path(root)
+            archive = release_dir / 'COTK-Launcher-Next-1.0.7-win-x64.zip'
+            archive.write_bytes(b'zip')
+            Path(str(archive) + '.sha256').write_text('sha', encoding='utf-8')
+            Path(str(archive) + '.prepared.json').write_text('{}', encoding='utf-8')
+            (release_dir / 'COTK-Launcher-Next-Setup-1.0.7.exe').write_bytes(b'setup')
+            Path(str(release_dir / 'COTK-Launcher-Next-Setup-1.0.7.exe') + '.sha256').write_text('sha', encoding='utf-8')
+            (release_dir / 'unrelated.txt').write_text('x', encoding='utf-8')
+            names = [path.name for path in ci.release_artifacts('1.0.7', release_dir)]
+            self.assertEqual(len(names), 5)
+            self.assertIn('COTK-Launcher-Next-Setup-1.0.7.exe', names)
+            self.assertNotIn('unrelated.txt', names)
+
+    def test_missing_artifacts_are_simply_absent(self):
+        with tempfile.TemporaryDirectory(prefix='cotk-ci-artifacts-') as root:
+            self.assertEqual(ci.release_artifacts('1.0.7', Path(root)), [])
+
+    def test_unproven_packages_are_reset_including_setup(self):
+        with tempfile.TemporaryDirectory(prefix='cotk-ci-reset-') as root:
+            release_dir = Path(root)
+            archive = release_dir / 'COTK-Launcher-Next-1.0.7-win-x64.zip'
+            archive.write_bytes(b'stale zip')
+            setup = release_dir / 'COTK-Launcher-Next-Setup-1.0.7.exe'
+            setup.write_bytes(b'stale setup')
+            ci.reset_unproven_packages('1.0.7', release_dir)
+            self.assertFalse(archive.exists())
+            self.assertFalse(setup.exists())
+
+    def test_proven_packages_are_never_reset(self):
+        with tempfile.TemporaryDirectory(prefix='cotk-ci-reset-') as root:
+            release_dir = Path(root)
+            archive = release_dir / 'COTK-Launcher-Next-1.0.7-win-x64.zip'
+            archive.write_bytes(b'tested zip')
+            Path(str(archive) + '.prepared.json').write_text('{}', encoding='utf-8')
+            ci.reset_unproven_packages('1.0.7', release_dir)
+            self.assertTrue(archive.exists())
 
     def test_patch_is_allocated_automatically(self):
         self.assertEqual(ci.next_version('1.0.2', '1.0.2'), '1.0.3')

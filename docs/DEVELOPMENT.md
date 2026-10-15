@@ -202,8 +202,11 @@ un dossier isolé. Il récupère les outils privés via `COTK_PUBLISHER_HOME`, c
 respecte une version déclarée supérieure), puis teste, construit et vérifie l'upgrade depuis la version publiée.
 Un numéro réservé lors d'un échec peut être sauté : ne pas le réutiliser ni supposer « +1 » exact.
 
-Le zip est d'abord envoyé sans être annoncé ; une preuve locale lie paquet, sources et contrôles. Ensuite :
-vérification de clé, sauvegarde du manifeste, publication, signature et vérification réelle. Conserver les
+Le zip et le setup d'installation (`COTK-Launcher-Next-Setup-X.Y.Z.exe`, construit par `tools/package-setup.ps1`
+avec Inno Setup 6) sont d'abord envoyés sans être annoncés ; une preuve locale lie paquets, sources et contrôles.
+Ensuite : vérification de clé, sauvegarde du manifeste, publication (le bloc `launcher` pointe `setupUrl` sur le
+setup de la version), signature, mise à jour de l'alias `cotk-launcher-setup-latest.exe` et vérification réelle.
+Conserver les
 garde-fous de restauration ; ils ne rétrogradent pas un joueur déjà migré.
 
 Le robot pousse seulement les métadonnées de version et de FAQ avec **`[skip ci]`**, plus le tag immuable
