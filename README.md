@@ -243,21 +243,37 @@ dotnet publish COTK.Launcher.Next.csproj -c Release -r win-x64 --self-contained 
 powershell -File tools\package-release.ps1 -PublishDir publish-X.Y.Z -Version X.Y.Z   # refuse sans COTK.Launcher.exe
 ```
 
-**Le launcher se met à jour lui-même** (`LauncherUpdater`, depuis la 1.0.2) selon le même protocole : détection
-dans le manifeste signé, proposition avec « Plus tard », téléchargement vérifié (taille + SHA-256), copie de
-l'installateur dans `%TEMP%`, **sauvegarde des fichiers remplacés et restauration complète en cas d'échec**,
-relance, nettoyage de la copie temporaire (limité à nos dossiers). Un paquet contenant `client\`, `logs\`,
-`ToggleConsole\` ou `settings\`, un zip-slip ou un zip sans `COTK.Launcher.exe` est refusé. Sans cette
-fonction, les joueurs migrés seraient bloqués sur leur version.
+**Tout est automatique côté joueur.** Les launchers 0.10.x migrent seuls à leur prochaine connexion. Une fois sur
+ce launcher (`LauncherUpdater`), chaque nouvelle version s'installe **toute seule au démarrage, sans question**,
+comme le faisait l'ancien launcher : détection dans le manifeste signé, téléchargement vérifié (taille + SHA-256),
+copie de l'installateur dans `%TEMP%`, **sauvegarde des fichiers remplacés et restauration complète en cas d'échec**,
+relance, nettoyage de la copie temporaire (limité à nos dossiers). Garde-fous : jamais pendant une installation ou
+une partie (reporté à l'ouverture suivante) ; si une tentative n'aboutit pas (installateur restauré), pas de boucle :
+nouvel essai automatique après 24 h, avec un bouton « Réessayer » ; option **Paramètres → Jeu → Mises à jour
+automatiques du launcher** (activée par défaut ; désactivée, le launcher demande avant). Un paquet contenant
+`client\`, `logs\`, `ToggleConsole\` ou `settings\`, un zip-slip ou un zip sans `COTK.Launcher.exe` est refusé.
+La **console F8 staff** s'installe et se met à jour seule après la connexion d'un compte staff (jamais pendant une
+partie). Les mises à jour du **client** (15 Go) restent volontairement à un clic : confirmation de la taille et de
+l'espace disque.
 
-Preuve rejouable : `python tools/e2e-migration.py` — télécharge la vraie 0.10.10 de production, l'installe dans un
-bac à sable (`%TEMP%\cotk-e2e`), la fait migrer vers 1.0.2 sans clic puis 1.0.2 → 1.0.3 par un clic réel sur
-« Update », contre un faux serveur sur 127.0.0.1 (aucun en-tête journalisé). Contrôle : client, journaux et console
+**Signature du manifeste : renouvellement automatique, jamais de contenu nouveau.** La signature expire après 30 jours.
+`python tools/publish-signed-manifest.py --renew` la renouvelle seulement s'il reste moins de 10 jours **et** si le
+manifeste du serveur est identique à la dernière publication approuvée ; sinon il refuse (code 2) : signer
+automatiquement ce que dit le serveur annulerait l'intérêt de la signature. Une tâche planifiée utilisateur
+(« COTK Renew Signed Manifest », chaque jour à 12 h et à l'ouverture de session) l'exécute. Une **nouvelle release du
+client ou du launcher** se signe à la main : `python tools/publish-signed-manifest.py`.
+
+Preuve rejouable : `python tools/e2e-migration.py` (`--real-zip` pour tester le paquet réellement servi par
+`dl.cotk.fr`) — télécharge la vraie 0.10.10 de production, l'installe dans un bac à sable (`%TEMP%\cotk-e2e`), la fait
+migrer vers 1.0.2 sans clic puis 1.0.2 → 1.0.3 **sans clic non plus**, contre un faux serveur sur 127.0.0.1 (aucun
+en-tête journalisé). Contrôle : client, journaux et console
 staff intacts, aucun dossier temporaire laissé, un seul launcher. Il pose un jeton factice dans le Gestionnaire
 d'identification et le retire à la fin ; il refuse de démarrer si un vrai jeton existe. Prérequis : les deux zips
 `pkg-1.0.2.zip` / `pkg-1.0.3.zip` dans `%TEMP%\cotk-e2e-pkgs`.
 
-**Publier la migration en production** (étape qui touche tous les joueurs, volontairement non faite par les scripts) :
+**Publier la migration en production** (étape qui touche tous les joueurs ; `tools/publish-launcher-migration.py`
+la fait avec `--dry-run`, sauvegarde du manifeste serveur, remplacement atomique du seul bloc `launcher`, et
+`--rollback`) — à la main, cela revient à :
 téléverser le zip dans le dossier `launcher-next/` du serveur de téléchargement, puis remplacer le bloc `launcher` du
 `manifest.json` de production (`version`, `downloadUrl`, `sha256`, `sizeBytes` ; garder `setupUrl`) — l'API relit
 ce fichier à chaque requête, l'effet est immédiat. Relancer ensuite `tools/publish-signed-manifest.py`. Les scripts

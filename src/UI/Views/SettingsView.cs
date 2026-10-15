@@ -132,10 +132,14 @@ internal sealed class SettingsView : View
         var minimize = new FxToggle(Settings.MinimizeOnPlay);
         minimize.Toggled += on => Settings.MinimizeOnPlay = on;
 
+        var auto = new FxToggle(Settings.AutoUpdateLauncher);
+        auto.Toggled += on => Settings.AutoUpdateLauncher = on;
+
         var folderRow = Row("Dossier du jeu", dir, folderControls);
         return Group(
             folderRow,
-            Row("Réduire le launcher pendant la partie", "Le launcher se met dans la barre des tâches quand le jeu démarre et revient à la fermeture.", minimize));
+            Row("Réduire le launcher pendant la partie", "Le launcher se met dans la barre des tâches quand le jeu démarre et revient à la fermeture.", minimize),
+            Row("Mises à jour automatiques du launcher", "Le launcher installe seul ses nouvelles versions au démarrage puis redémarre. Vos réglages et le jeu ne sont pas touchés. Désactivez pour être prévenu avant.", auto));
     }
 
     private FrameworkElement DisplayCard()

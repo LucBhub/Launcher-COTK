@@ -273,7 +273,21 @@ internal sealed class LauncherApp : IDisposable
         if (release is null || _updatePrompted) return;
         _updatePrompted = true;
         Log.Info($"mise à jour du launcher disponible : {Config.Version} → {release.Version}");
-        _ = PromptLauncherUpdateAsync(release);
+
+        if (LauncherUpdater.ShouldAutoApply(release))
+        {
+            // Comme l'ancien launcher : aucune question. Jamais pendant une installation ou une partie (réessayé à l'ouverture suivante).
+            if (IsBusy) { Log.Info("mise à jour automatique du launcher reportée : opération en cours"); return; }
+            _ = UpdateLauncherAsync(automatic: true);
+        }
+        else if (Settings.AutoUpdateLauncher)
+        {
+            // Une tentative automatique vient d'échouer : on reste utilisable, on réessaiera seul dans 24 h.
+            _shell.Toast(UI.ToastKind.Warning, "Mise à jour du launcher en attente",
+                "La dernière tentative n'a pas abouti. Nouvel essai automatique dans 24 h, ou réessayez maintenant.",
+                null, () => _ = UpdateLauncherAsync(), "Réessayer");
+        }
+        else _ = PromptLauncherUpdateAsync(release); // option désactivée : on demande
     }
 
     private async Task PromptLauncherUpdateAsync(LauncherRelease release)
@@ -292,14 +306,15 @@ internal sealed class LauncherApp : IDisposable
 
     /// <summary>Télécharge, vérifie et installe la nouvelle version, puis ferme le launcher : la copie installatrice
     /// remplace les fichiers et relance le nouveau launcher. Refusé pendant une installation ou une partie.</summary>
-    public async Task UpdateLauncherAsync()
+    public async Task UpdateLauncherAsync(bool automatic = false)
     {
         var release = LauncherUpdate;
         if (release is null || Preview || LauncherUpdating) return;
         if (IsBusy)
         {
-            _shell.Toast(UI.ToastKind.Warning, "Terminez d'abord l'opération en cours",
-                "La mise à jour du launcher redémarre l'application. Réessayez quand l'installation ou la partie est terminée.");
+            if (!automatic)
+                _shell.Toast(UI.ToastKind.Warning, "Terminez d'abord l'opération en cours",
+                    "La mise à jour du launcher redémarre l'application. Réessayez quand l'installation ou la partie est terminée.");
             return;
         }
 
@@ -309,6 +324,7 @@ internal sealed class LauncherApp : IDisposable
         try
         {
             var archive = await LauncherUpdater.DownloadAsync(release, null, _lifetime.Token);
+            LauncherUpdater.RecordAttempt(release.Version); // avant : si l'installateur échoue, on ne boucle pas
             LauncherUpdater.Schedule(archive);
             _shell.Toast(UI.ToastKind.Info, "Redémarrage du launcher…");
             _ = _shell.Dispatcher.BeginInvoke(() => System.Windows.Application.Current.Shutdown());
@@ -320,7 +336,9 @@ internal sealed class LauncherApp : IDisposable
             Log.Warn($"mise à jour du launcher : {error.Code}", ex);
             LauncherUpdating = false;
             Raise("launcherupdate");
-            _shell.ShowError(error, () => _ = UpdateLauncherAsync());
+            // Automatique : pas de fenêtre bloquante pour un échec réseau, une simple notification avec « Réessayer ».
+            if (automatic) _shell.Toast(UI.ToastKind.Warning, "Mise à jour du launcher impossible", error.Message, error.Code, () => _ = UpdateLauncherAsync(), "Réessayer");
+            else _shell.ShowError(error, () => _ = UpdateLauncherAsync());
         }
     }
 
@@ -357,10 +375,9 @@ internal sealed class LauncherApp : IDisposable
             }
 
             SetConsole(installed is null ? StaffConsoleStatus.NeedsInstall : StaffConsoleStatus.NeedsUpdate);
-            _shell.Toast(UI.ToastKind.Info,
-                installed is null ? "Console F8 staff disponible" : "Mise à jour de la console F8",
-                "Elle s'ouvrira en jeu avec la touche F8. Installation en un clic, vérifiée par SHA-256.",
-                null, () => _ = InstallStaffConsoleAsync(), installed is null ? "Installer" : "Mettre à jour");
+            // Automatique (86 Ko, SHA-256 vérifié) : jamais pendant une partie, la console y est utilisée.
+            if (Op is not (Operation.Launching or Operation.Playing))
+                await InstallStaffConsoleAsync(automatic: true);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -370,7 +387,7 @@ internal sealed class LauncherApp : IDisposable
         }
     }
 
-    public async Task InstallStaffConsoleAsync()
+    public async Task InstallStaffConsoleAsync(bool automatic = false)
     {
         var session = Session;
         if (session is null || !session.Account.IsStaff || StaffConsoleStatus == StaffConsoleStatus.Installing) return;
@@ -405,7 +422,8 @@ internal sealed class LauncherApp : IDisposable
             var error = Errors.From(ex);
             Log.Warn($"installation de la console F8 : {error.Code}", ex);
             SetConsole(StaffConsole.InstalledSha() is null ? StaffConsoleStatus.NeedsInstall : StaffConsoleStatus.NeedsUpdate);
-            _shell.ShowError(error, () => _ = InstallStaffConsoleAsync());
+            if (automatic) _shell.Toast(UI.ToastKind.Warning, "Installation de la console F8 impossible", error.Message, error.Code, () => _ = InstallStaffConsoleAsync(), "Réessayer");
+            else _shell.ShowError(error, () => _ = InstallStaffConsoleAsync());
         }
     }
 

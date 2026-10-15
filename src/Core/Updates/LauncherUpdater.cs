@@ -41,6 +41,26 @@ internal static class LauncherUpdater
         return IsNewer(release.Version, currentVersion ?? Config.Version) ? release : null;
     }
 
+    // ------------------------------------------------------------------ politique automatique
+
+    /// <summary>Après une tentative sans résultat (installateur restauré, version inchangée), on n'insiste pas à chaque ouverture.</summary>
+    public static readonly TimeSpan RetryAfterAttempt = TimeSpan.FromHours(24);
+
+    /// <summary>Vrai si le launcher peut s'installer seul maintenant : option activée, et pas de tentative récente pour cette
+    /// même version. Une date illisible ou située dans le futur ne bloque jamais (horloge dérégulée).</summary>
+    public static bool ShouldAutoApply(LauncherRelease release, DateTimeOffset? now = null)
+    {
+        if (!Settings.AutoUpdateLauncher) return false;
+        var parts = (Settings.LauncherUpdateAttempt ?? "").Split('|');
+        if (parts.Length != 2 || parts[0] != release.Version) return true;
+        if (!DateTimeOffset.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var when)) return true;
+        var age = (now ?? DateTimeOffset.UtcNow) - when;
+        return age < TimeSpan.Zero || age >= RetryAfterAttempt;
+    }
+
+    public static void RecordAttempt(string version, DateTimeOffset? now = null) =>
+        Settings.LauncherUpdateAttempt = $"{version}|{(now ?? DateTimeOffset.UtcNow):O}";
+
     // ------------------------------------------------------------------ téléchargement
 
     /// <summary>Télécharge le paquet vers un fichier temporaire. Jamais plus que la taille publiée ; le fichier n'est

@@ -61,6 +61,7 @@ internal static class CoreTests
             Run("mise à jour du launcher : remplacement, données du joueur intactes, relance",()=>LauncherUpdateApply(temp));
             Run("mise à jour du launcher : échec restauré, paquet dangereux refusé",()=>LauncherUpdateRollback(temp));
             Run("mise à jour du launcher : nettoyage limité à nos dossiers",()=>LauncherUpdateCleanup(temp));
+            Run("mise à jour du launcher : automatique, sans boucle après un échec",LauncherUpdatePolicy);
             Run("client : réglages du joueur intacts (état laissé par l'ancien launcher, mise à jour, réparation)",()=>PlayerSettingsDelta(temp));
             Run("client : réglages du joueur intacts lors du repli sur l'archive complète",()=>PlayerSettingsFullArchive(temp));
             Run("client : même réglages, même dossier et même marqueur que l'ancien launcher",()=>OldLauncherCompatibility(temp));
@@ -945,6 +946,36 @@ internal static class CoreTests
         // 3) Plan illisible ou archive absente : aucune action.
         var bad=Path.Combine(root,"bad-plan.json");File.WriteAllText(bad,"{ pas du json");
         Eq(1,LauncherUpdater.Apply(bad,(_,_)=>throw new Exception("ne doit rien lancer"),TimeSpan.Zero),"plan illisible refusé");
+    }
+
+    private static void LauncherUpdatePolicy()
+    {
+        var release=new LauncherRelease("1.0.3","https://dl.cotk.fr/launcher.zip",new string('a',64),1000);
+        var now=new DateTimeOffset(2026,10,15,12,0,0,TimeSpan.Zero);
+        try
+        {
+            Settings.AutoUpdateLauncher=true;Settings.LauncherUpdateAttempt=null;
+            True(LauncherUpdater.ShouldAutoApply(release,now),"automatique par défaut, aucune tentative connue");
+            LauncherUpdater.RecordAttempt("1.0.3",now);
+            True(!LauncherUpdater.ShouldAutoApply(release,now.AddMinutes(5)),"tentative récente de cette version : pas de boucle à chaque ouverture");
+            True(!LauncherUpdater.ShouldAutoApply(release,now.AddHours(23)),"toujours bloqué avant 24 h");
+            True(LauncherUpdater.ShouldAutoApply(release,now.AddHours(24)),"nouvel essai automatique après 24 h");
+            True(LauncherUpdater.ShouldAutoApply(release with {Version="1.0.4"},now.AddMinutes(5)),"une version plus récente est tentée tout de suite");
+            Settings.LauncherUpdateAttempt="1.0.3|"+now.AddDays(365).ToString("O");
+            True(LauncherUpdater.ShouldAutoApply(release,now),"date de tentative dans le futur (horloge dérégulée) : ne bloque jamais");
+            Settings.LauncherUpdateAttempt="n'importe quoi";
+            True(LauncherUpdater.ShouldAutoApply(release,now),"valeur illisible : ne bloque jamais");
+            Settings.LauncherUpdateAttempt="1.0.3|pas-une-date";
+            True(LauncherUpdater.ShouldAutoApply(release,now),"date illisible : ne bloque jamais");
+            Settings.LauncherUpdateAttempt=null;
+            Settings.AutoUpdateLauncher=false;
+            True(!LauncherUpdater.ShouldAutoApply(release,now),"option désactivée : le launcher demande avant");
+            Settings.Load();
+            True(!Settings.AutoUpdateLauncher,"le choix de désactiver est mémorisé après redémarrage");
+            File.WriteAllText(AppPaths.SettingsFile,"{}");Settings.Load();
+            True(Settings.AutoUpdateLauncher,"sans réglage enregistré (installation de l'ancien launcher) : automatique");
+        }
+        finally {Settings.AutoUpdateLauncher=true;Settings.LauncherUpdateAttempt=null;}
     }
 
     private static void LauncherUpdateCleanup(string root)

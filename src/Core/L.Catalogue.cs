@@ -456,6 +456,12 @@ Console F8 réservée au staff.|F8 console reserved for staff.|F8 控制台仅�
 La taille de la console reçue ne correspond pas à celle annoncée.|The received console size does not match the announced size.|收到的控制台大小与公布的大小不一致。
 La console reçue est plus grosse qu'annoncé.|The received console is larger than announced.|收到的控制台比公布的更大。
 La console reçue est incomplète.|The received console is incomplete.|收到的控制台不完整。
+Mises à jour automatiques du launcher|Automatic launcher updates|启动器自动更新
+Le launcher installe seul ses nouvelles versions au démarrage puis redémarre. Vos réglages et le jeu ne sont pas touchés. Désactivez pour être prévenu avant.|The launcher installs new versions by itself at startup, then restarts. Your settings and the game are not touched. Turn off to be asked first.|启动器会在启动时自动安装新版本并重启。你的设置和游戏不会受到影响。关闭后将先询问你。
+Mise à jour du launcher en attente|Launcher update pending|启动器更新待处理
+La dernière tentative n'a pas abouti. Nouvel essai automatique dans 24 h, ou réessayez maintenant.|The last attempt did not complete. It will retry automatically in 24 h, or you can retry now.|上次尝试未完成。将在 24 小时后自动重试，你也可以现在重试。
+Mise à jour du launcher impossible|Launcher update failed|无法更新启动器
+Installation de la console F8 impossible|F8 console installation failed|无法安装 F8 控制台
 Mise à jour du launcher|Launcher update|启动器更新
 Une nouvelle version du launcher est disponible. Il va se fermer puis se relancer tout seul. Vos réglages et le jeu ne sont pas touchés.|A new launcher version is available. It will close and restart by itself. Your settings and the game are not touched.|有新版本启动器。它将自动关闭并重新启动。你的设置和游戏不会受到影响。
 Plus tard|Later|稍后

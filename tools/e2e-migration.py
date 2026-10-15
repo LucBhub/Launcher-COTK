@@ -2,7 +2,7 @@
 
   0.10.10 (ancien launcher WinForms, telecharge depuis dl.cotk.fr)
     -> se met a jour seule (comportement deja deploye, impossible a changer) vers 1.0.2 (ce launcher)
-    -> 1.0.2 propose 1.0.3, l'utilisateur accepte, 1.0.3 demarre.
+    -> 1.0.2 trouve 1.0.3 et s'installe seul (aucun clic), 1.0.3 demarre.
 
 Isolation : APPDATA/LOCALAPPDATA/reglages/journaux dans %TEMP%\\cotk-e2e, API = faux serveur sur 127.0.0.1
 (aucun en-tete journalise). Aucun fichier du vrai profil n'est modifie. Seule la session Windows enregistree
@@ -79,6 +79,7 @@ def updater_dirs():
 # ---------------------------------------------------------------- faux serveur API
 class State:
     launcher = ('1.0.2', 'pkg-1.0.2.zip')
+    real_zip = None  # (url, sha256, taille) : le vrai paquet servi par dl.cotk.fr (--real-zip)
     seen = []
     base = ''
 
@@ -106,22 +107,26 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/healthz':
             return self.reply(200, b'ok', 'text/plain')
         if path == '/api/v1/launcher/me':
+            # 1er appel = l'ancien launcher, 2e appel = le launcher migre (1.0.2) : il doit voir la 1.0.3.
+            if State.seen.count('/api/v1/launcher/me') == 2:
+                State.launcher = ('1.0.3', 'pkg-1.0.3.zip')
             return self.reply(200, {'id': 'e2e', 'username': 'e2e-user', 'role': 'user', 'expiresAt': '2030-01-01T00:00:00Z'})
         if path == '/api/v1/launcher/updates':
             version, name = State.launcher
-            data, sha = package(name)
+            if name == 'pkg-1.0.2.zip' and State.real_zip:
+                url, sha, size = State.real_zip
+            else:
+                data, sha = package(name)
+                url, size = f'{State.base}/{name}', len(data)
             return self.reply(200, {
                 'schemaVersion': 1,
-                'launcher': {'version': version, 'downloadUrl': f'{State.base}/{name}', 'sha256': sha, 'sizeBytes': len(data), 'required': False},
+                'launcher': {'version': version, 'downloadUrl': url, 'sha256': sha, 'sizeBytes': size, 'required': False},
                 'client': {'version': '0.23.4.161181', 'archiveUrl': f'{State.base}/client.zip', 'sha256': '0' * 63 + '1', 'sizeBytes': 1, 'executable': 'H1Z1.exe', 'required': True},
             })
         if path.startswith('/pkg-') and path.endswith('.zip'):
             name = path[1:]
             data, _ = package(name)
-            self.reply(200, data, 'application/zip')
-            if name == 'pkg-1.0.2.zip':  # l'ancien launcher a son paquet : la suite voit la 1.0.3
-                State.launcher = ('1.0.3', 'pkg-1.0.3.zip')
-            return
+            return self.reply(200, data, 'application/zip')
         self.reply(404, {'error': 'not found'})
 
     def do_POST(self):
@@ -163,6 +168,13 @@ def main():
     for name in ('pkg-1.0.2.zip', 'pkg-1.0.3.zip'):
         if not (PKGS / name).exists():
             sys.exit(f'Paquet de test manquant : {PKGS / name}')
+
+    if '--real-zip' in sys.argv:
+        url = 'https://dl.cotk.fr/launcher-next/COTK-Launcher-Next-1.0.2-win-x64.zip'
+        data = urllib.request.urlopen(url, timeout=120).read()
+        State.real_zip = (url, hashlib.sha256(data).hexdigest(), len(data))
+        print(f'Paquet REEL servi par dl.cotk.fr : {len(data)} octets, sha256 {State.real_zip[1][:16]}...', flush=True)
+        (PKGS / 'real-1.0.2.zip').write_bytes(data)
 
     # 0. Vrai launcher de production
     if not OLD_ZIP.exists():
@@ -234,26 +246,21 @@ def run_e2e(keep):
         for p in list((SANDBOX / 'logs').rglob('*')) + list(install.rglob('*.log'))[:3]:
             if p.is_file():
                 print('  journal', p, ':', p.read_text(encoding='utf-8', errors='replace')[-600:])
-    check('/api/v1/launcher/updates' in State.seen and '/pkg-1.0.2.zip' in State.seen, 'manifeste lu et paquet 1.0.2 telecharge')
+    check('/api/v1/launcher/updates' in State.seen and (State.real_zip is not None or '/pkg-1.0.2.zip' in State.seen), 'manifeste lu et paquet 1.0.2 telecharge' + (' depuis dl.cotk.fr (HTTPS)' if State.real_zip else ''))
     check((install / 'client' / 'H1Z1.exe').read_text() == 'player-game', 'client du joueur intact')
     check((install / 'logs' / 'keep.log').read_text() == 'player-log', 'journaux du joueur intacts')
     check((install / 'ToggleConsole' / 'ToggleConsole.exe').read_text() == 'staff-console', 'console staff intacte')
     check(wait_for(lambda: updater_dirs() <= before_dirs, 30) is not None or updater_dirs() <= before_dirs, 'dossier temporaire de l\'installateur supprime (1re migration)')
 
-    # 4. Le launcher 1.0.2 propose 1.0.3 : on accepte comme un utilisateur (clic reel)
+    # 4. Le launcher 1.0.2 trouve 1.0.3 et s'installe SEUL : aucune fenetre, aucun clic.
     if row:
-        print('Attente de la proposition de mise a jour 1.0.3...', flush=True)
-        current = migrated('1.0.2')
+        print('Attente de la mise a jour automatique 1.0.3 (aucun clic)...', flush=True)
         titled = wait_for(lambda: (migrated('1.0.2') or {}).get('title') == 'COTK - Crown of the King', 40)
         check(bool(titled), 'fenetre du launcher 1.0.2 affichee (COTK - Crown of the King)')
-        time.sleep(7)  # la modale apparait apres lecture du manifeste
-        current = migrated('1.0.2')
-        result = click_modal_button(current['pid']) if current else ''
-        clicked = bool(current)
-        print('  ' + result, flush=True)
+        clicked = True
         if clicked:
             row2 = wait_for(lambda: migrated('1.0.3'), 150)
-            check(row2 is not None, '1.0.2 -> 1.0.3 par le launcher lui-meme (telechargement, remplacement, relance)')
+            check(row2 is not None, '1.0.2 -> 1.0.3 AUTOMATIQUE, sans aucun clic (telechargement, remplacement, relance)')
             check('/pkg-1.0.3.zip' in State.seen, 'paquet 1.0.3 telecharge')
             check((install / 'client' / 'H1Z1.exe').read_text() == 'player-game', 'client intact apres la 2e mise a jour')
             check((install / 'logs' / 'keep.log').read_text() == 'player-log', 'journaux intacts apres la 2e mise a jour')

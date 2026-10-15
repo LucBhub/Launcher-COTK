@@ -16,11 +16,11 @@ the previous COTK launcher.
 Open PowerShell in your download folder and run:
 
 ```powershell
-Get-FileHash .\COTK-Launcher-Next-1.0.1-win-x64.zip -Algorithm SHA256
+Get-FileHash .\COTK-Launcher-Next-1.0.2-win-x64.zip -Algorithm SHA256
 ```
 
 The value must be identical to the one published next to the download:
-`465f739d4672244ea2e5ab37e554a5a53e87c8b419f7a9287c50dac825f55caf`. If it differs, **do not run it** and tell us on Discord.
+`2d1d25963979d5a8c26e228302000d08fce78f77bb6ea1a8fd31b64def397c4f`. If it differs, **do not run it** and tell us on Discord.
 
 Game updates downloaded by the launcher are separately verified with a digital signature that
 only COTK can produce, so a tampered update is refused automatically.
@@ -41,11 +41,11 @@ comportement que l'ancien launcher COTK.
 Ouvrez PowerShell dans votre dossier de téléchargement :
 
 ```powershell
-Get-FileHash .\COTK-Launcher-Next-1.0.1-win-x64.zip -Algorithm SHA256
+Get-FileHash .\COTK-Launcher-Next-1.0.2-win-x64.zip -Algorithm SHA256
 ```
 
 La valeur doit être identique à celle publiée à côté du téléchargement :
-`465f739d4672244ea2e5ab37e554a5a53e87c8b419f7a9287c50dac825f55caf`. Sinon, **ne l'exécutez pas** et prévenez-nous sur Discord.
+`2d1d25963979d5a8c26e228302000d08fce78f77bb6ea1a8fd31b64def397c4f`. Sinon, **ne l'exécutez pas** et prévenez-nous sur Discord.
 
 Les mises à jour du jeu téléchargées par le launcher sont vérifiées séparément par une signature
 numérique que seul COTK peut produire : une mise à jour falsifiée est refusée automatiquement.
@@ -65,9 +65,9 @@ COTK 启动器是社区项目，没有使用付费的发布者证书签名，因
 在下载文件夹中打开 PowerShell：
 
 ```powershell
-Get-FileHash .\COTK-Launcher-Next-1.0.1-win-x64.zip -Algorithm SHA256
+Get-FileHash .\COTK-Launcher-Next-1.0.2-win-x64.zip -Algorithm SHA256
 ```
 
-结果必须与下载页面旁公布的值一致：`465f739d4672244ea2e5ab37e554a5a53e87c8b419f7a9287c50dac825f55caf`。如果不一致，**请不要运行**，并在 Discord 告知我们。
+结果必须与下载页面旁公布的值一致：`2d1d25963979d5a8c26e228302000d08fce78f77bb6ea1a8fd31b64def397c4f`。如果不一致，**请不要运行**，并在 Discord 告知我们。
 
 启动器下载的游戏更新还会由只有 COTK 才能生成的数字签名单独校验，被篡改的更新会被自动拒绝。

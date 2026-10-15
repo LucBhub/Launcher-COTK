@@ -39,6 +39,22 @@ internal static class Settings
         set => Write("minimizeOnPlay", value);
     }
 
+    /// <summary>Le launcher installe seul ses nouvelles versions au démarrage (défaut : oui, comme l'ancien launcher).
+    /// Désactivé : il demande avant.</summary>
+    public static bool AutoUpdateLauncher
+    {
+        get => ReadBool("autoUpdateLauncher") ?? true;
+        set => Write("autoUpdateLauncher", value);
+    }
+
+    /// <summary>Dernière mise à jour automatique lancée, « version|date ISO ». Une tentative qui échoue (restaurée par
+    /// l'installateur) n'est pas rejouée à chaque ouverture : voir <see cref="LauncherUpdater.ShouldAutoApply"/>.</summary>
+    public static string? LauncherUpdateAttempt
+    {
+        get => ReadString("launcherUpdateAttempt");
+        set => Write("launcherUpdateAttempt", value);
+    }
+
     public static bool VerboseLogs
     {
         get => ReadBool("verboseLogs") ?? false;
