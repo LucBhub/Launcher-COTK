@@ -13,7 +13,7 @@
     <RootNamespace>COTK.Next</RootNamespace>
     <ApplicationIcon>assets\cotk.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.0.6</Version>
+    <Version>1.0.7</Version>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Product>COTK</Product>
     <AssemblyTitle>COTK Launcher</AssemblyTitle>
