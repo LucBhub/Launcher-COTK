@@ -66,6 +66,11 @@ def production():
         return json.load(response)
 
 
+def copy_checkout(workspace, source):
+    # Do not use "publish*": it also matches tools/publisher.ps1, which is required for signing.
+    shutil.copytree(workspace, source, ignore=shutil.ignore_patterns('.git', '__pycache__', 'out', 'bin', 'obj', 'release'))
+
+
 def write_result(state, artifact_dir):
     artifact_dir.mkdir(parents=True, exist_ok=True)
     (artifact_dir / 'result.json').write_text(json.dumps(state, indent=2), encoding='utf-8')
@@ -124,11 +129,14 @@ def main():
     shutil.rmtree(artifact_dir, ignore_errors=True)
     if not source.exists():
         source.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(workspace, source, ignore=shutil.ignore_patterns('.git', '__pycache__', 'out', 'bin', 'obj', 'publish*', 'release'))
+        copy_checkout(workspace, source)
     for relative in PRIVATE_FILES:
         destination = source / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(home / relative, destination)
+    for relative in ('tools/publisher.ps1', 'tools/ReleasePublisher.cs', *PRIVATE_FILES):
+        if not (source / relative).is_file():
+            raise RuntimeError(f'Required publisher file missing: {relative}')
 
     state_file = job_root / 'state.json'
     state = json.loads(state_file.read_text(encoding='utf-8')) if state_file.exists() else {'commit': sha, 'status': 'preparing'}

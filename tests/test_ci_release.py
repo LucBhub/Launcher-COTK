@@ -16,6 +16,19 @@ update_spec.loader.exec_module(update)
 
 
 class PushPublisherChecks(unittest.TestCase):
+    def test_publisher_files_survive_build_artifact_exclusions(self):
+        with tempfile.TemporaryDirectory(prefix='cotk-ci-copy-') as root:
+            workspace, source = Path(root) / 'checkout', Path(root) / 'source'
+            (workspace / 'tools').mkdir(parents=True)
+            (workspace / 'out').mkdir()
+            (workspace / 'tools' / 'publisher.ps1').write_text('publisher', encoding='utf-8')
+            (workspace / 'tools' / 'ReleasePublisher.cs').write_text('publisher code', encoding='utf-8')
+            (workspace / 'out' / 'local.dll').write_text('not a source', encoding='utf-8')
+            ci.copy_checkout(workspace, source)
+            self.assertTrue((source / 'tools' / 'publisher.ps1').exists())
+            self.assertTrue((source / 'tools' / 'ReleasePublisher.cs').exists())
+            self.assertFalse((source / 'out').exists())
+
     def test_existing_player_session_is_never_written_or_deleted(self):
         update.e2e.FAILS.clear()
         args = ['e2e-update.py', '--to-zip', 'fake.zip', '--to-version', '1.0.4', '--keep-existing-session']
