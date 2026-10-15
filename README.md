@@ -252,8 +252,10 @@ l'exécution GitHub Actions.
 L'agent **COTK-Launcher-Windows** s'exécute sur le PC de publication : la clé CNG non exportable et les
 accès SSH restent sur ce poste. Le PC doit rester allumé, avec la session Windows de l'éditeur ouverte.
 Si le PC est éteint, les jobs attendent son retour. La tâche **COTK GitHub Release Runner** démarre l'agent
-à l'ouverture de session. Les tests demandent un jeu fermé et l'absence de session joueur mémorisée
-(se déconnecter avant de pousser). Une erreur bloque la release et apparaît dans GitHub Actions.
+à l'ouverture de session. Les tests demandent un jeu fermé. En CI, une session déjà enregistrée est
+conservée en lecture seule face au serveur de test local ;
+son empreinte est comparée avant et après, sans affichage ni modification du jeton. Une erreur bloque
+la release et apparaît dans GitHub Actions.
 
 Le checkout GitHub et le dossier de build sont isolés du répertoire de développement. Les publications
 sont sérialisées. Un push devenu obsolète avant la mise en ligne est ignoré ; aucun push plus récent

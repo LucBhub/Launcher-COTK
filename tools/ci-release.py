@@ -107,6 +107,7 @@ def main():
         raise RuntimeError('Publisher accepts only pushes to the trusted release branch.')
     os.environ['GIT_TERMINAL_PROMPT'] = '0'
     os.environ['GCM_INTERACTIVE'] = 'Never'
+    os.environ['COTK_CI_KEEP_SESSION'] = '1'
     workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve()
     home = Path(os.environ['COTK_PUBLISHER_HOME']).resolve()
     sha = os.environ['GITHUB_SHA']
@@ -153,6 +154,10 @@ def main():
         else:
             if version(live['version']) >= version(release_version):
                 raise RuntimeError('A newer version is already in production.')
+            # A failed test may leave an unvalidated local zip; only job-owned files with no successful receipt are reset.
+            if archive.exists() and not Path(str(archive) + '.prepared.json').exists():
+                archive.unlink()
+                Path(str(archive) + '.sha256').unlink(missing_ok=True)
             run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test*release.py'], source)
             run([sys.executable, 'tools/release.py', release_version], source)
             if remote_head(workspace) != sha:

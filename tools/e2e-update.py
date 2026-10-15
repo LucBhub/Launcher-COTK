@@ -7,7 +7,7 @@ Installe le launcher precedent dans un bac a sable (%TEMP%\\cotk-e2e), annonce l
 sur 127.0.0.1, puis verifie : mise a jour SANS clic, client/journaux/console staff intacts, aucun dossier temporaire laisse,
 un seul launcher. Meme isolation que e2e-migration.py (jeton factice, aucun en-tete journalise).
 """
-import argparse, hashlib, importlib.util, json, os, shutil, subprocess, sys, threading, time, urllib.request
+import argparse, hashlib, importlib.util, json, os, re, shutil, subprocess, sys, threading, time, urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -106,14 +106,20 @@ def main():
     ap.add_argument('--from-zip')
     ap.add_argument('--from-version', default='1.0.2')
     ap.add_argument('--keep', action='store_true')
+    ap.add_argument('--keep-existing-session', action='store_true', help='lire la session existante face au faux serveur local sans jamais la modifier')
     args = ap.parse_args()
     initial = e2e.cred('exists')
     if initial not in ('True', 'False'):
         sys.exit('Etat du Gestionnaire d\'identification illisible : aucun jeton ne sera modifie.')
-    if initial == 'True':
+    preserve = initial == 'True' and args.keep_existing_session
+    if initial == 'True' and not preserve:
         sys.exit('Une session COTK est enregistree dans le Gestionnaire d\'identification : deconnectez-vous du launcher avant ce test.')
+    before = e2e.cred('fingerprint') if preserve else None
+    if preserve and not re.fullmatch(r'[0-9A-F]{64}', before):
+        sys.exit('Impossible de verifier la session existante : aucun test ne sera lance.')
     try:
-        e2e.cred('write')
+        if not preserve:
+            e2e.cred('write')
         if e2e.cred('exists') != 'True':
             sys.exit('Impossible de preparer le jeton de test.')
         run(args)
@@ -124,11 +130,17 @@ def main():
         if SERVER is not None:
             SERVER.shutdown()
             SERVER.server_close()
-        e2e.cred('delete')
-        deleted = e2e.cred('exists') == 'False'
-        check(deleted, 'jeton factice retire du Gestionnaire d\'identification')
-        if not deleted:
-            sys.exit('Le jeton de test n\'a pas pu etre nettoye.')
+        if preserve:
+            intact = e2e.cred('exists') == 'True' and e2e.cred('fingerprint') == before
+            check(intact, 'session utilisateur conservee a l\'identique (aucune ecriture ni suppression)')
+            if not intact:
+                sys.exit('La session utilisateur a change pendant le test.')
+        else:
+            e2e.cred('delete')
+            deleted = e2e.cred('exists') == 'False'
+            check(deleted, 'jeton factice retire du Gestionnaire d\'identification')
+            if not deleted:
+                sys.exit('Le jeton de test n\'a pas pu etre nettoye.')
     print()
     print('RESULTAT :', 'TOUT EST VERT' if not e2e.FAILS else f'{len(e2e.FAILS)} ECHEC(S)')
     for f in e2e.FAILS:

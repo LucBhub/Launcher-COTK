@@ -44,6 +44,14 @@ public static class E2eCred {
   [DllImport("advapi32.dll", SetLastError=true)] static extern void CredFree(IntPtr c);
   [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool CredDelete(string target, uint type, uint flags);
   public static bool Exists() { IntPtr p; if (!CredRead("COTK.Launcher.Session", 1, 0, out p)) return false; CredFree(p); return true; }
+  public static string Fingerprint() {
+    IntPtr p; if (!CredRead("COTK.Launcher.Session", 1, 0, out p)) return "";
+    try {
+      var c = (C)Marshal.PtrToStructure(p, typeof(C)); var b = new byte[c.BlobSize]; Marshal.Copy(c.Blob, b, 0, b.Length);
+      try { using (var sha = System.Security.Cryptography.SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(b)).Replace("-", ""); } }
+      finally { Array.Clear(b, 0, b.Length); }
+    } finally { CredFree(p); }
+  }
   public static void Write(string token) {
     var b = Encoding.UTF8.GetBytes(token); var p = Marshal.AllocCoTaskMem(b.Length); Marshal.Copy(b, 0, p, b.Length);
     var c = new C { Type = 1, TargetName = "COTK.Launcher.Session", BlobSize = (uint)b.Length, Blob = p, Persist = 2, UserName = "COTK Launcher" };
@@ -57,7 +65,7 @@ public static class E2eCred {
 
 def cred(action):
     script = TEMP / 'cotk-e2e-cred.ps1'
-    body = {'exists': '[E2eCred]::Exists()', 'write': "[E2eCred]::Write('e2e-fake-token')", 'delete': '[E2eCred]::Delete()'}[action]
+    body = {'exists': '[E2eCred]::Exists()', 'fingerprint': '[E2eCred]::Fingerprint()', 'write': "[E2eCred]::Write('e2e-fake-token')", 'delete': '[E2eCred]::Delete()'}[action]
     script.write_text(CRED_CODE + '\n' + body + '\n', encoding='utf-8')
     return subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script)], capture_output=True, text=True).stdout.strip()
 
@@ -292,4 +300,3 @@ def run_e2e(keep):
 
 if __name__ == '__main__':
     main()
-

@@ -5,13 +5,46 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+import sys
 
 spec = importlib.util.spec_from_file_location('ci_release', Path(__file__).parents[1] / 'tools' / 'ci-release.py')
 ci = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ci)
+update_spec = importlib.util.spec_from_file_location('e2e_update_policy', Path(__file__).parents[1] / 'tools' / 'e2e-update.py')
+update = importlib.util.module_from_spec(update_spec)
+update_spec.loader.exec_module(update)
 
 
 class PushPublisherChecks(unittest.TestCase):
+    def test_existing_player_session_is_never_written_or_deleted(self):
+        update.e2e.FAILS.clear()
+        args = ['e2e-update.py', '--to-zip', 'fake.zip', '--to-version', '1.0.4', '--keep-existing-session']
+        with patch.object(sys, 'argv', args), patch.object(update, 'run') as execute, \
+             patch.object(update.e2e, 'ps'), patch.object(update.e2e, 'cred', side_effect=lambda action: 'True' if action == 'exists' else 'A' * 64) as credentials:
+            with self.assertRaises(SystemExit) as result:
+                update.main()
+        self.assertEqual(result.exception.code, 0)
+        execute.assert_called_once()
+        self.assertTrue(all(call.args[0] in ('exists', 'fingerprint') for call in credentials.call_args_list))
+
+    def test_session_is_untouched_even_if_update_test_throws(self):
+        update.e2e.FAILS.clear()
+        args = ['e2e-update.py', '--to-zip', 'fake.zip', '--to-version', '1.0.4', '--keep-existing-session']
+        with patch.object(sys, 'argv', args), patch.object(update, 'run', side_effect=RuntimeError('test stopped')), \
+             patch.object(update.e2e, 'ps'), patch.object(update.e2e, 'cred', side_effect=lambda action: 'True' if action == 'exists' else 'A' * 64) as credentials:
+            with self.assertRaises(RuntimeError):
+                update.main()
+        self.assertTrue(all(call.args[0] in ('exists', 'fingerprint') for call in credentials.call_args_list))
+
+    def test_unreadable_session_prevents_running_the_update_test(self):
+        args = ['e2e-update.py', '--to-zip', 'fake.zip', '--to-version', '1.0.4', '--keep-existing-session']
+        with patch.object(sys, 'argv', args), patch.object(update, 'run') as execute, \
+             patch.object(update.e2e, 'cred', side_effect=lambda action: 'True' if action == 'exists' else '') as credentials:
+            with self.assertRaises(SystemExit):
+                update.main()
+        execute.assert_not_called()
+        self.assertTrue(all(call.args[0] in ('exists', 'fingerprint') for call in credentials.call_args_list))
+
     def test_patch_is_allocated_automatically(self):
         self.assertEqual(ci.next_version('1.0.2', '1.0.2'), '1.0.3')
         self.assertEqual(ci.next_version('1.0.1', '1.0.7'), '1.0.8')
