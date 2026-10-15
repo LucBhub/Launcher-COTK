@@ -230,6 +230,38 @@ SignPath Foundation propose une signature gratuite pour l'open source.
 
 ## Publier les prochaines versions
 
+### Automatiquement sur un push
+
+La branche **`launcher-next`** dispose du workflow **Publish Launcher Next**. Un push touchant le code,
+les ressources, les tests ou les outils déclenche la release. Un changement limité à la documentation
+ne publie pas de binaire.
+
+```powershell
+git add src/chemin/du/fichier.cs
+git commit -m "fix(launcher): description du changement"
+git push origin launcher-next
+```
+
+Le workflow choisit automatiquement le prochain numéro de patch (ou respecte une version explicitement
+plus élevée dans le projet), exécute les tests et le test de mise à jour depuis la version en production,
+construit le zip, le vérifie, signe puis publie. Il pousse ensuite le numéro et la FAQ dans un commit
+`[skip ci]` pour éviter une boucle, avec un tag `next-vX.Y.Z`. Faire `git pull --ff-only` avant la prochaine
+modification pour récupérer ce commit automatique. Les artefacts et le résultat sont disponibles dans
+l'exécution GitHub Actions.
+
+L'agent **COTK-Launcher-Windows** s'exécute sur le PC de publication : la clé CNG non exportable et les
+accès SSH restent sur ce poste. Le PC doit rester allumé, avec la session Windows de l'éditeur ouverte.
+Si le PC est éteint, les jobs attendent son retour. La tâche **COTK GitHub Release Runner** démarre l'agent
+à l'ouverture de session. Les tests demandent un jeu fermé et l'absence de session joueur mémorisée
+(se déconnecter avant de pousser). Une erreur bloque la release et apparaît dans GitHub Actions.
+
+Le checkout GitHub et le dossier de build sont isolés du répertoire de développement. Les publications
+sont sérialisées. Un push devenu obsolète avant la mise en ligne est ignoré ; aucun push plus récent
+n'est écrasé. Le workflow ne répond pas aux pull requests et ne tourne que dans ce dépôt et cette branche.
+`main` conserve son ancien workflow ; il ne faut pas y publier une nouvelle 0.10.x.
+
+### Commandes locales de secours
+
 Depuis le dossier `tools/launcher-next` du poste de publication, choisir un numéro supérieur à la
 version en production (exemple : `1.0.3` après `1.0.2`) :
 
@@ -259,9 +291,10 @@ publication signée précédente. Cela arrête les nouvelles migrations, sans r�
 déjà mis à jour. La commande de retour arrière est affichée. `--go-live --dry-run` ne fait que les
 contrôles en lecture seule ; `--yes` permet de confirmer sans saisie interactive.
 
-**Git :** après succès, les sources publiques sont poussées sur **`launcher-next`** avec un tag
+**Git (mode local) :** après succès, les sources publiques sont poussées sur **`launcher-next`** avec un tag
 **`next-vX.Y.Z`** immuable. `main` reste inchangé, son ancien CI ne publie donc rien. Un simple
-`git push` ne déploie pas le launcher : c'est `--go-live` qui le fait. En cas d'échec Git après
+push des sources peut maintenant déclencher le workflow décrit ci-dessus ; pour cette commande locale,
+c'est `--go-live` qui effectue la publication directement. En cas d'échec Git après
 publication, le script précise que la version est déjà en ligne ; pour reprendre seulement les sources :
 
 ```powershell
@@ -271,7 +304,7 @@ python tools/release.py 1.0.3 --push-sources
 L'orchestrateur et les scripts SSH/signature restent locaux au poste de publication : ils ne sont
 pas inclus dans la branche publique. Prérequis : Python, Roslyn BuildTools, runtime Desktop 10,
 SDK dans `%LOCALAPPDATA%\cotk-dotnet-sdk`, accès SSH et clé CNG du compte Windows éditeur.
-Ce n'est pas encore un déploiement depuis GitHub Actions : la clé privée n'y est pas transférée.
+GitHub Actions appelle les outils locaux via l'agent enregistré ; la clé privée n'est pas transférée à GitHub.
 
 Tests des garde-fous du publisher (locaux, tous les effets externes simulés) :
 

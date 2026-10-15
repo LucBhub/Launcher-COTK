@@ -1,0 +1,56 @@
+name: Publish Launcher Next
+
+on:
+  push:
+    branches: [launcher-next]
+    paths:
+      - 'src/**'
+      - 'assets/**'
+      - 'bootstrap/**'
+      - 'tests/**'
+      - 'COTK.Launcher.Next.csproj'
+      - 'app.manifest'
+      - 'build.ps1'
+      - 'tools/**'
+      - '.github/workflows/release-next.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cotk-launcher-production
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'LucBhub/Launcher-COTK' && github.ref == 'refs/heads/launcher-next'
+    runs-on: [self-hosted, Windows, X64, cotk-launcher-release]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test, build, sign and publish from the registered Windows publisher
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:COTK_PUBLISHER_HOME -or -not $env:COTK_CI_PYTHON) {
+            throw 'This runner is not configured as the COTK publisher.'
+          }
+          & $env:COTK_CI_PYTHON tools/ci-release.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Keep the release artifacts and checks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-next-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/cotk-release-result/*.zip
+            ${{ runner.temp }}/cotk-release-result/*.sha256
+            ${{ runner.temp }}/cotk-release-result/*.prepared.json
+            ${{ runner.temp }}/cotk-release-result/result.json
+          if-no-files-found: ignore
+          retention-days: 14
