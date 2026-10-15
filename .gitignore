@@ -1,6 +1,8 @@
 out/
 bin/
 obj/
+__pycache__/
+*.pyc
 publish/
 release/
 .gitnexus/

@@ -137,25 +137,25 @@ Cette livraison est une **refonte de développement exécutable**, pas encore un
 - Logs avec rotation et masquage des tickets, tokens et mots de passe.
 - Les variables `COTK_API_URL` et `COTK_GAME_SERVER` n'acceptent que des surcharges locales.
 
-**À terminer avant diffusion publique :** signature Authenticode (aucun certificat disponible),
-updater transactionnel dédié à cette refonte et installateur de release (le manifeste signé est
-publié et vérifié, mais le launcher Next ne se met pas encore à jour lui-même). Le launcher
-Next n'applique **pas** les mises à jour du launcher WinForms 0.10.x : ce sont deux produits distincts.
-Le SHA-256 garantit l'intégrité, pas l'authenticité si le serveur de publication est compromis.
+Depuis la 1.0.2, le même protocole permet la migration depuis WinForms et l'auto-mise à jour du Next.
+La publication destinée au Next est vérifiée avec la clé publique embarquée, en plus du SHA-256 du paquet.
+La distribution reste **sans Authenticode** (choix du projet). Le lien d'installation historique utilise
+encore le setup WinForms, qui migre automatiquement après connexion ; le zip fournit directement le Next.
 
 ### Console F8 staff
 
 Intégrée depuis la 1.0.1 (comme l'ancien launcher) : après connexion d'un compte **admin ou modérateur**,
 le launcher interroge `GET /api/v1/staff/console` (lecture seule) et compare le SHA-256 à la console
-installée. Absente ou périmée → notification « Installer / Mettre à jour » et carte **Paramètres → Staff**.
+installée. Depuis la 1.0.2, si elle est absente ou périmée, il l'installe automatiquement ; la carte
+**Paramètres → Staff** permet aussi une reprise manuelle.
 Le zip est téléchargé depuis l'API réservée au staff (chaque téléchargement est tracé dans l'audit côté
 serveur), limité à la taille annoncée, vérifié par SHA-256, extrait sans zip-slip puis installé dans
 `ToggleConsole\` à côté du launcher. Un refus (empreinte, taille, archive sans `ToggleConsole.exe`) laisse
 la console déjà installée intacte. Installation bloquée pendant une partie. Un joueur ne voit rien et
 ne déclenche aucun appel. Au lancement du jeu, le surveillant démarre en `--native-ui` uniquement.
 Vérifié : tests du noyau (installation, mise à jour, 4 refus), test UI avec clic réel, et production
-(403 pour un joueur, 200 `sha256`+`sizeBytes` pour un modérateur). **Non vérifié en conditions réelles :**
-le téléchargement avec un vrai compte staff et l'ouverture en jeu avec F8.
+(403 pour un joueur, 200 `sha256`+`sizeBytes` pour un modérateur). Le journal d'un essai utilisateur réel
+confirme aussi l'installation et le démarrage du surveillant après une session en jeu stable.
 
 La connexion navigateur complète et le parcours jusqu'au jeu nécessitent une recette avec un compte
 autorisé : ils n'ont pas été validés de bout en bout durant les captures de l'aperçu.
@@ -179,7 +179,7 @@ client tournent hors du thread d'interface.
 
 ## Vérification
 
-Sur cette machine sans SDK, Roslyn BuildTools + .NET Desktop Runtime 10 compilent exactement les
+Le chemin sans SDK, Roslyn BuildTools + .NET Desktop Runtime 10, compile exactement les
 sources `src/`. Le petit apphost dans `bootstrap/` permet un lancement local sans console.
 
 ```powershell
@@ -191,18 +191,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests\capture-languages.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\performance.ps1
 ```
 
-Résultats : **30 scénarios du noyau/API**, **27 vérifications UI dans une vraie fenêtre WPF**.
+Résultats : **43 scénarios du noyau/API**, **33 vérifications UI dans une vraie fenêtre WPF**.
 Le test delta utilise un serveur HTTP local : reprise Range, noms accentués, fichiers atomiques,
 cache, conservation des réglages, corruption réparée, fichier manquant, repli complet et refus d'un
 catalogue incompatible. Les tests UI couvrent 25 navigations avec un nombre d'horloges stable,
 focus modal, confirmations, annulation et réduction des animations.
 
-Les tests et rapports sont indépendants du build serveur. Rien n'a été publié ni commité.
+Les tests et rapports sont indépendants du build serveur.
 
-### Build SDK pour une future release
+### Build SDK pour une release
 
 ```powershell
-dotnet publish COTK.Launcher.Next.csproj -c Release -r win-x64 --self-contained true -o publish
+dotnet publish COTK.Launcher.Next.csproj -c Release -r win-x64 --self-contained true -p:AssemblyName=COTK.Launcher -o publish
 ```
 
 Ce chemin a été exécuté et vérifié (SDK 10.0.402, installé dans le profil utilisateur sans droits
@@ -220,13 +220,64 @@ clics à faire et comment comparer l'empreinte. Après `dotnet publish` (SDK .NE
 **requis pour distribuer** : le build local suppose .NET installé chez le joueur) :
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-release.ps1 -PublishDir publish -Version 1.0.0
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-release.ps1 -PublishDir publish -Version X.Y.Z
 ```
 
 Le script produit `release\COTK-Launcher-Next-<version>-win-x64.zip` et son `.sha256`, refuse
 d'écraser une version déjà empaquetée et avertit si le runtime n'est pas embarqué. Publier le zip
 et le `.sha256` ensemble, et recopier l'empreinte dans la FAQ. Si le code devient public un jour,
 SignPath Foundation propose une signature gratuite pour l'open source.
+
+## Publier les prochaines versions
+
+Depuis le dossier `tools/launcher-next` du poste de publication, choisir un numéro supérieur à la
+version en production (exemple : `1.0.3` après `1.0.2`) :
+
+```powershell
+# Essai complet local, sans envoi ni modification de production
+python tools/release.py 1.0.3 --dry-run
+
+# Préparer et envoyer le paquet, sans l'annoncer aux joueurs
+python tools/release.py 1.0.3
+
+# Déployer la version préparée, puis synchroniser Git
+python tools/release.py 1.0.3 --go-live --notes "Description des changements"
+```
+
+**Préparation automatique :** mise à jour des numéros dans le projet et `AssemblyInfo`, build Roslyn,
+tests noyau/API et UI, publication autonome avec le SDK, zip compatible `COTK.Launcher.exe`, SHA-256,
+test réel de mise à jour **depuis la version actuellement publiée**, mise à jour de la FAQ, envoi et
+relecture du zip en HTTPS. Les tests utilisent un bac à sable : fermer le jeu et se déconnecter d'abord
+(le banc refuse d'écraser une session enregistrée). L'envoi d'un paquet testé peut être repris en
+relançant la même commande : un zip distant différent n'est jamais écrasé.
+
+**Mise en ligne :** une preuve locale `.prepared.json` lie le zip à ses sources et aux vérifications
+réussies. Sources modifiées, test sauté, production changée entre-temps ou mauvais paquet → refus.
+Le script vérifie la clé CNG, sauvegarde le manifeste, annonce la version, signe, puis contrôle la
+production. Un échec de publication/vérification déclenche la restauration du manifeste et de la
+publication signée précédente. Cela arrête les nouvelles migrations, sans rétrograder les joueurs
+déjà mis à jour. La commande de retour arrière est affichée. `--go-live --dry-run` ne fait que les
+contrôles en lecture seule ; `--yes` permet de confirmer sans saisie interactive.
+
+**Git :** après succès, les sources publiques sont poussées sur **`launcher-next`** avec un tag
+**`next-vX.Y.Z`** immuable. `main` reste inchangé, son ancien CI ne publie donc rien. Un simple
+`git push` ne déploie pas le launcher : c'est `--go-live` qui le fait. En cas d'échec Git après
+publication, le script précise que la version est déjà en ligne ; pour reprendre seulement les sources :
+
+```powershell
+python tools/release.py 1.0.3 --push-sources
+```
+
+L'orchestrateur et les scripts SSH/signature restent locaux au poste de publication : ils ne sont
+pas inclus dans la branche publique. Prérequis : Python, Roslyn BuildTools, runtime Desktop 10,
+SDK dans `%LOCALAPPDATA%\cotk-dotnet-sdk`, accès SSH et clé CNG du compte Windows éditeur.
+Ce n'est pas encore un déploiement depuis GitHub Actions : la clé privée n'y est pas transférée.
+
+Tests des garde-fous du publisher (locaux, tous les effets externes simulés) :
+
+```powershell
+python -m unittest discover -s tests -p test_release.py -v
+```
 
 ## Migration depuis l'ancien launcher (0.10.x) et mises à jour
 

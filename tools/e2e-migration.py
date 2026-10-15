@@ -79,6 +79,7 @@ def updater_dirs():
 # ---------------------------------------------------------------- faux serveur API
 class State:
     launcher = ('1.0.2', 'pkg-1.0.2.zip')
+    chain = True  # True : au 2e appel /me le manifeste annonce la 1.0.3 (banc de migration). Faux : le manifeste ne change pas.
     real_zip = None  # (url, sha256, taille) : le vrai paquet servi par dl.cotk.fr (--real-zip)
     seen = []
     base = ''
@@ -108,7 +109,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, b'ok', 'text/plain')
         if path == '/api/v1/launcher/me':
             # 1er appel = l'ancien launcher, 2e appel = le launcher migre (1.0.2) : il doit voir la 1.0.3.
-            if State.seen.count('/api/v1/launcher/me') == 2:
+            if State.chain and State.seen.count('/api/v1/launcher/me') == 2:
                 State.launcher = ('1.0.3', 'pkg-1.0.3.zip')
             return self.reply(200, {'id': 'e2e', 'username': 'e2e-user', 'role': 'user', 'expiresAt': '2030-01-01T00:00:00Z'})
         if path == '/api/v1/launcher/updates':
