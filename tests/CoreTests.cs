@@ -65,12 +65,6 @@ internal static class CoreTests
             Run("client : réglages du joueur intacts (état laissé par l'ancien launcher, mise à jour, réparation)",()=>PlayerSettingsDelta(temp));
             Run("client : réglages du joueur intacts lors du repli sur l'archive complète",()=>PlayerSettingsFullArchive(temp));
             Run("client : même réglages, même dossier et même marqueur que l'ancien launcher",()=>OldLauncherCompatibility(temp));
-            Run("correctif client : code identique à l'outil validé sur le vrai client", ClientPatchTests.StubMatchesValidatedTool);
-            Run("correctif client : installation unique, joignable, jeu repris", ClientPatchTests.AppliesOnce);
-            Run("correctif client : octets inattendus → aucune écriture", ClientPatchTests.RefusesUnknownBytes);
-            Run("correctif client : pages occupées contournées", ClientPatchTests.SkipsOccupiedPages);
-            Run("correctif client : échec → site intact, page libérée, jeu jamais suspendu", ClientPatchTests.RollsBackOnFailure);
-            Run("correctif client : seul l'exécutable analysé, désactivable", () => ClientPatchTests.OnlyThePinnedClient(temp));
             if (args.Contains("--api-smoke")) Run("API production : état, versions, actualités, classement et 401", ApiSmoke);
         }
         catch (Exception ex)

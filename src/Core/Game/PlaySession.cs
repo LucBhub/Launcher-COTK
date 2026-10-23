@@ -159,7 +159,6 @@ internal sealed class PlaySession
         DateTimeOffset? inGameSince = null;
         var stable = false;
         var consoleStarted = false;
-        var clientPatched = false;
         long lastReloginPosition = -1;
 
         _status(new PlayStatus(PlayPhase.Starting, "Démarrage du client…", attempt, MaxAttempts));
@@ -203,14 +202,6 @@ internal sealed class PlaySession
                     inGameSince = stage == ClientStage.InGame ? DateTimeOffset.UtcNow : null;
                     Log.Info($"op={operationId} attempt={attempt} pid={process.Id} stage={stage}");
                     Publish(stage, attempt);
-
-                    // Une fois le client chargé (menu ou plus loin), on installe en mémoire le correctif F pendant
-                    // un rechargement. Jamais bloquant : toute garde qui échoue laisse le jeu intact.
-                    if (!clientPatched && stage != ClientStage.Starting)
-                    {
-                        clientPatched = true;
-                        await ApplyClientPatchAsync(process, operationId);
-                    }
                 }
 
                 // Retour au lobby après un match : le ticket de 60 s est périmé, on en distribue un frais.
@@ -244,19 +235,6 @@ internal sealed class PlaySession
                 return await StopAsync(process, attempt, operationId, stage, AttemptOutcome.LoadingTimedOut, startedAt);
 
             await Task.Delay(750, ct);
-        }
-    }
-
-    private static async Task ApplyClientPatchAsync(Process process, string operationId)
-    {
-        try
-        {
-            var result = await Task.Run(() => ClientReloadLootPatch.TryApply(process, GameFiles.ExePath));
-            Log.Info($"op={operationId} correctif client (F pendant rechargement) : {result.Outcome} - {result.Detail}");
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"op={operationId} correctif client ignoré", ex);
         }
     }
 
