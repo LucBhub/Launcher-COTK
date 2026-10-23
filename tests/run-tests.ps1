@@ -28,6 +28,7 @@ $usings = Join-Path $out 'GlobalUsings.g.cs'
 
 $sources = @(Get-ChildItem (Join-Path $root 'src\Core') -Filter '*.cs' -Recurse -File | ForEach-Object { $_.FullName }) + @((Join-Path $PSScriptRoot 'CoreTests.cs'))
 $sources += Join-Path $PSScriptRoot 'UninstallTests.cs'
+$sources += Join-Path $PSScriptRoot 'ClientPatchTests.cs'
 $lines = @('/nologo', '/t:exe', '/nullable:enable', '/langversion:latest', '/nostdlib', '/codepage:65001', '/debug:portable', "/out:$out\CoreTests.dll", '/nowarn:CS1591', "`"$usings`"")
 foreach ($r in $refs) { $lines += "/r:`"$r`"" }
 foreach ($s in $sources) { $lines += "`"$s`"" }
