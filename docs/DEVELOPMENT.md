@@ -279,6 +279,12 @@ Les commandes locales de secours du README sont réservées à une exploitation 
 
 ## 10. Terminer une intervention
 
+Pour le candidat de correctif client F/rechargement, voir
+[le diagnostic, la garde de chargement et les preuves de test](client-reload-loot-patch.md).
+Le marqueur `cClientRunStateRunning` seul n'autorise pas une modification du code
+du jeu : il apparaît aussi au menu. Le candidat exige un monde réellement chargé
+et vingt secondes de stabilité ; sa préparation n'autorise aucune publication.
+
 Indiquer les fichiers modifiés, les commandes réellement exécutées, leurs résultats et les limites restantes.
 Dire si un commit/push a été fait. Pour une release : URL du job, version, tag et vérification du manifeste.
 Ne pas présenter un envoi ou un démarrage comme une application réussie.

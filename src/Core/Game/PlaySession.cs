@@ -160,6 +160,8 @@ internal sealed class PlaySession
         var stable = false;
         var consoleStarted = false;
         var clientPatched = false;
+        DateTimeOffset? patchWorldReadySince = null;
+        long patchWorldMarker = -1;
         long lastReloginPosition = -1;
 
         _status(new PlayStatus(PlayPhase.Starting, "Démarrage du client…", attempt, MaxAttempts));
@@ -194,6 +196,18 @@ internal sealed class PlaySession
             // Un journal vide veut dire « pas d'information », jamais « retour à Starting ».
             if (log.Length > 0)
             {
+                // Running apparaît aussi au menu : seul GAMESTATE_INGAME prouve le chargement du monde.
+                int readyMarker = ClientReloadLootPatch.WorldReadyMarker(log);
+                if (readyMarker < 0)
+                {
+                    patchWorldReadySince = null;
+                    patchWorldMarker = -1;
+                }
+                else if (patchWorldMarker != offset + readyMarker)
+                {
+                    patchWorldMarker = offset + readyMarker;
+                    patchWorldReadySince = DateTimeOffset.UtcNow;
+                }
                 var detected = GameFiles.DetectClientStage(log);
                 if (detected != stage)
                 {
@@ -203,14 +217,6 @@ internal sealed class PlaySession
                     inGameSince = stage == ClientStage.InGame ? DateTimeOffset.UtcNow : null;
                     Log.Info($"op={operationId} attempt={attempt} pid={process.Id} stage={stage}");
                     Publish(stage, attempt);
-
-                    // Une fois le client chargé (menu ou plus loin), on installe en mémoire le correctif F pendant
-                    // un rechargement. Jamais bloquant : toute garde qui échoue laisse le jeu intact.
-                    if (!clientPatched && stage != ClientStage.Starting)
-                    {
-                        clientPatched = true;
-                        await ApplyClientPatchAsync(process, operationId);
-                    }
                 }
 
                 // Retour au lobby après un match : le ticket de 60 s est périmé, on en distribue un frais.
@@ -229,6 +235,17 @@ internal sealed class PlaySession
                 {
                     stable = true;
                     Log.Info($"op={operationId} attempt={attempt} jeu stable");
+                }
+
+                // Correctif F pendant un rechargement : UNIQUEMENT une fois le monde chargé et le jeu stable.
+                // Constat de banc : posé au menu il plante le client au chargement du monde (c0000005) ; réécrire
+                // les mêmes octets à ce moment-là ne plante pas, en changer le contenu si. Posé en jeu, il survit
+                // à un second chargement de monde. Jamais bloquant : toute garde qui échoue laisse le jeu intact.
+                if (!clientPatched && ClientReloadLootPatch.WorldReadyMarker(log) >= 0
+                    && ClientReloadLootPatch.IsSafeMoment(stage, patchWorldReadySince, now))
+                {
+                    clientPatched = true;
+                    await ApplyClientPatchAsync(process, operationId);
                 }
                 if (!consoleStarted || !StaffConsole.IsWatcherRunning())
                 {

@@ -6,9 +6,9 @@ namespace COTK.Next.Tests;
 /// client, et logique d'application (garde, annulation, idempotence) testée sur une mémoire factice : aucun vrai jeu.</summary>
 internal static class ClientPatchTests
 {
-    // Générés par tools/qa/qa_parallel_loot_client.py::build_stub (le code réellement installé le 2026-10-22).
-    private const string StubNear = "4881ecc0000000488944242048894c242848895424304c894424384c894c24404c895424484c895c2450f30f7f842460000000f30f7f8c2470000000f30f7f942480000000f30f7f9c2490000000f30f7fa424a0000000f30f7fac24b00000004c89f148b870574e4001000000ffd088442458f30f6f842460000000f30f6f8c2470000000f30f6f942480000000f30f6f9c2490000000f30f6fa424a0000000f30f6fac24b0000000488b442420488b4c2428488b5424304c8b4424384c8b4c24404c8b5424484c8b5c2450807c245800488da424c00000000f85683a93f083bd50460000000f8f5b3a93f0e9363a93f0";
-    private const string StubHigh = "4881ecc0000000488944242048894c242848895424304c894424384c894c24404c895424484c895c2450f30f7f842460000000f30f7f8c2470000000f30f7f942480000000f30f7f9c2490000000f30f7fa424a0000000f30f7fac24b00000004c89f148b870574ea0f67f0000ffd088442458f30f6f842460000000f30f6f8c2470000000f30f6f942480000000f30f6f9c2490000000f30f6fa424a0000000f30f6fac24b0000000488b442420488b4c2428488b5424304c8b4424384c8b4c24404c8b5424484c8b5c2450807c245800488da424c00000000f85683a93f083bd50460000000f8f5b3a93f0e9363a93f0";
+    // SHA du code v2 généré par l'outil Python dont les 300 branches/états ont été émulés sous Unicorn.
+    private const string StubNearSha = "14c1b678a7e32c3d0d8a538510f97de6b90d2a77b684a5aceef4d741ef9970dc";
+    private const string StubHighSha = "dcd5abda94a41d408b5457d44ae451003e049220401dc9fa7d78e367143bcdf1";
 
     private static void Check(bool value, string message) { if (!value) throw new Exception(message); }
 
@@ -25,6 +25,7 @@ internal static class ClientPatchTests
         public readonly List<(long Address, int Length)> Writes = new();
         public int Suspends, Resumes;
         public long FailWriteAt = -1;
+        public bool FailAfterPartialSiteWrite;
 
         public FakeMemory(bool withOriginal = true)
         {
@@ -53,7 +54,17 @@ internal static class ClientPatchTests
 
         public void WriteCode(long address, byte[] data)
         {
-            if (address == FailWriteAt) throw new InvalidOperationException("écriture refusée (test)");
+            if (address == FailWriteAt)
+            {
+                FailWriteAt = -1;
+                throw new InvalidOperationException("écriture refusée (test)");
+            }
+            if (FailAfterPartialSiteWrite && address == ImageBase + ClientReloadLootPatch.SiteRva)
+            {
+                FailAfterPartialSiteWrite = false;
+                Put(address, data.Take(3).ToArray());
+                throw new InvalidOperationException("écriture partielle du saut (test)");
+            }
             Writes.Add((address, data.Length));
             Put(address, data);
         }
@@ -65,13 +76,14 @@ internal static class ClientPatchTests
 
     public static void StubMatchesValidatedTool()
     {
-        Check(Convert.ToHexString(ClientReloadLootPatch.BuildStub(0x150000000, 0x140000000)).ToLowerInvariant() == StubNear,
-            "le code généré diffère de celui validé sur le vrai client (adresses proches)");
-        Check(Convert.ToHexString(ClientReloadLootPatch.BuildStub(0x7FF6B0000000, 0x7FF6A0000000)).ToLowerInvariant() == StubHigh,
-            "le code généré diffère de celui validé sur le vrai client (adresses hautes)");
+        static string Sha(byte[] code) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(code)).ToLowerInvariant();
+        Check(Sha(ClientReloadLootPatch.BuildStub(0x150000000, 0x140000000)) == StubNearSha,
+            "le code généré diffère de la v2 émulée (adresses proches)");
+        Check(Sha(ClientReloadLootPatch.BuildStub(0x7FF6B0000000, 0x7FF6A0000000)) == StubHighSha,
+            "le code généré diffère de la v2 émulée (adresses hautes)");
         var jump = ClientReloadLootPatch.BuildReplacement(0x140000000 + ClientReloadLootPatch.SiteRva, 0x150000000);
-        Check(Convert.ToHexString(jump).ToLowerInvariant() == "e9ddc46c0f90909090",
-            "le saut de remplacement diffère du reçu du test réel : " + Convert.ToHexString(jump));
+        Check(Convert.ToHexString(jump).ToLowerInvariant() == "e946c56c0f90909090",
+            "le saut de remplacement ne vise pas le nouveau site avant la garde pending : " + Convert.ToHexString(jump));
         Check(jump.Length == ClientReloadLootPatch.Original.Length, "le remplacement doit couvrir exactement les 9 octets déplacés");
     }
 
@@ -87,7 +99,7 @@ internal static class ClientPatchTests
         Check(memory.Executable.Contains(trampoline), "la page du trampoline doit devenir exécutable");
         Check(memory.Read(site, 9).AsSpan().SequenceEqual(ClientReloadLootPatch.BuildReplacement(site, trampoline)),
             "le site doit contenir le saut vers le trampoline");
-        Check(memory.Read(trampoline, 241).AsSpan().SequenceEqual(ClientReloadLootPatch.BuildStub(trampoline, memory.ImageBase)),
+        Check(memory.Read(trampoline, 259).AsSpan().SequenceEqual(ClientReloadLootPatch.BuildStub(trampoline, memory.ImageBase)),
             "le trampoline doit contenir le code généré");
         Check(memory.Suspends == 1 && memory.Resumes == 1, "le jeu doit être suspendu puis repris exactement une fois");
 
@@ -104,6 +116,13 @@ internal static class ClientPatchTests
         Check(result.Outcome == ClientReloadLootPatch.Outcome.NotReady, "octets inattendus : refus attendu, obtenu " + result.Outcome);
         Check(memory.Writes.Count == 0 && memory.Allocated.Count == 0 && memory.Suspends == 0,
             "aucune écriture, réservation ou suspension quand les octets ne sont pas ceux analysés");
+
+        var foreign = new FakeMemory();
+        var site = foreign.ImageBase + ClientReloadLootPatch.SiteRva;
+        foreign.Put(site, ClientReloadLootPatch.BuildReplacement(site, 0x150000000));
+        Check(ClientReloadLootPatch.Apply(foreign).Outcome == ClientReloadLootPatch.Outcome.NotReady,
+            "un saut étranger avec les mêmes NOP ne prouve pas que notre correctif est installé");
+        Check(foreign.Writes.Count == 0, "ne pas écraser un autre correctif");
     }
 
     public static void SkipsOccupiedPages()
@@ -125,6 +144,38 @@ internal static class ClientPatchTests
         Check(memory.Read(site, 9).AsSpan().SequenceEqual(ClientReloadLootPatch.Original), "le site doit rester intact");
         Check(memory.Freed.Count == 1, "la page réservée doit être libérée");
         Check(memory.Suspends == 1 && memory.Resumes == 1, "le jeu ne doit jamais rester suspendu");
+
+        var partial = new FakeMemory { FailAfterPartialSiteWrite = true };
+        Check(ClientReloadLootPatch.Apply(partial).Outcome == ClientReloadLootPatch.Outcome.Failed,
+            "l'écriture partielle doit être signalée comme un échec");
+        Check(partial.Read(site, 9).AsSpan().SequenceEqual(ClientReloadLootPatch.Original),
+            "restaurer les instructions même si l'échec survient après seulement trois octets écrits");
+        Check(partial.Freed.Count == 1 && partial.Resumes == 1,
+            "ne libérer la page qu'après restauration et reprendre le client");
+    }
+
+    public static void NeverBeforeTheWorldIsLoaded()
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var stage in new[] { ClientStage.Starting, ClientStage.TitleScreen, ClientStage.LoadingWorld })
+        {
+            Check(!ClientReloadLootPatch.IsSafeMoment(stage, null, now), $"jamais pendant {stage}");
+            Check(!ClientReloadLootPatch.IsSafeMoment(stage, now.AddMinutes(-1), now),
+                $"jamais pendant {stage}, même si un ancien épisode était stable");
+        }
+        Check(!ClientReloadLootPatch.IsSafeMoment(ClientStage.InGame, null, now), "sans preuve du monde chargé : on attend");
+        Check(!ClientReloadLootPatch.IsSafeMoment(ClientStage.InGame, now.AddSeconds(-19), now), "attendre les vingt secondes réelles");
+        Check(ClientReloadLootPatch.IsSafeMoment(ClientStage.InGame, now.AddSeconds(-20), now), "monde chargé depuis vingt secondes : autorisé");
+
+        const string menu = "newState=GAMESTATE_TITLESCREEN\nnewState=cClientRunStateRunning\n";
+        Check(GameFiles.DetectClientStage(menu) == ClientStage.InGame, "reproduire l'ambiguïté du détecteur général");
+        Check(ClientReloadLootPatch.WorldReadyMarker(menu) == -1, "Running seul ne suffit jamais, même au menu depuis longtemps");
+        var loaded = menu + "newState=GAMESTATE_LOADINGSCREEN\nnewState=GAMESTATE_INGAME\n";
+        Check(ClientReloadLootPatch.WorldReadyMarker(loaded) >= 0, "preuve explicite du chargement du monde");
+        foreach (var barrier in new[] { "GAMESTATE_LOADINGSCREEN", "GAMESTATE_TITLESCREEN", "cClientRunStateWaitForZoneLoad", "cClientRunStateShuttingDown" })
+            Check(ClientReloadLootPatch.WorldReadyMarker(loaded + "newState=" + barrier) == -1,
+                "une nouvelle transition invalide le précédent monde chargé : " + barrier);
+        Check(ClientReloadLootPatch.WorldReadyMarker("") == -1, "pas de journal = pas de preuve");
     }
 
     public static void OnlyThePinnedClient(string temp)

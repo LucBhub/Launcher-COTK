@@ -70,6 +70,7 @@ internal static class CoreTests
             Run("correctif client : octets inattendus → aucune écriture", ClientPatchTests.RefusesUnknownBytes);
             Run("correctif client : pages occupées contournées", ClientPatchTests.SkipsOccupiedPages);
             Run("correctif client : échec → site intact, page libérée, jeu jamais suspendu", ClientPatchTests.RollsBackOnFailure);
+            Run("correctif client : jamais avant le chargement du monde (menu, chargement)", ClientPatchTests.NeverBeforeTheWorldIsLoaded);
             Run("correctif client : seul l'exécutable analysé, désactivable", () => ClientPatchTests.OnlyThePinnedClient(temp));
             if (args.Contains("--api-smoke")) Run("API production : état, versions, actualités, classement et 401", ApiSmoke);
         }

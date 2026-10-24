@@ -12,9 +12,10 @@ namespace COTK.Next.Core;
 /// <c>FUN_140928e10</c> (« Cancelling reload »), annule le rechargement LOCALEMENT et n'envoie pas le ramassage.
 /// Le serveur ne peut pas l'empêcher : la décision est prise avant l'envoi du paquet.
 ///
-/// Ce module remplace les 9 octets du <c>cmp [rbp+0x4650],0 ; jg</c> (RVA 0x933B1E) par un saut vers un petit
-/// code qui, si la cible déjà validée est un objet au sol (prédicat natif RVA 0x4E5770), poursuit directement vers
-/// le chemin d'envoi ; pour toute autre cible il exécute exactement l'instruction déplacée puis l'ancien chemin.
+/// La v2 remplace le premier <c>cmp [rbp+0x4650],0 ; jg</c> (RVA 0x933AB5), AVANT la garde de réponse de reload.
+/// Pour un objet au sol déjà validé et hors visée, elle poursuit vers l'envoi sans modifier l'arme. Pour toute autre
+/// cible elle exécute la comparaison déplacée et le chemin natif. La visée conserve son refus natif, et la garde
+/// personnage occupé précède le site. L'ancien site 0x933B1E ne permettait pas le loot sans ACK et n'est plus modifié.
 ///
 /// Garde-fous : le fichier sur disque n'est JAMAIS modifié ; uniquement le client dont le SHA-256 est celui analysé ;
 /// les octets d'origine doivent être présents en mémoire ; échec = on ne fait rien (le jeu se lance normalement) ;
@@ -25,13 +26,16 @@ internal static class ClientReloadLootPatch
     /// <summary>SHA-256 du H1Z1.exe analysé. Tout autre exécutable est laissé intact.</summary>
     internal const string ClientSha256 = "a03e8f6d7d5db772ea2b94aa17f8d2849b1127c5c249cc8cb3bb6bd2df98a112";
 
-    internal const long SiteRva = 0x933B1E;
+    internal const long SiteRva = 0x933AB5;
     internal const long SendRva = 0x933B47;
-    internal const long CancelRva = 0x933B27;
+    internal const long AdsRva = 0x933AE9;
+    internal const long PendingRva = 0x933ABE;
+    internal const long LegacySiteRva = 0x933B1E;
     internal const long WorldPredicateRva = 0x4E5770;
 
-    /// <summary>cmp dword [rbp+0x4650], 0 ; jg +0x20 — les octets déplacés.</summary>
-    internal static readonly byte[] Original = Convert.FromHexString("83bd50460000007f20");
+    /// <summary>Premier cmp dword [rbp+0x4650], 0 ; jg +0x2b — les octets déplacés.</summary>
+    internal static readonly byte[] Original = Convert.FromHexString("83bd50460000007f2b");
+    internal static readonly byte[] LegacyOriginal = Convert.FromHexString("83bd50460000007f20");
 
     private const int AllocationAttempts = 8192;          // image+0x10000000 .. +0x30000000, dans la portée rel32
     private const long AllocationStart = 0x10000000;
@@ -66,7 +70,7 @@ internal static class ClientReloadLootPatch
         return bytes;
     }
 
-    /// <summary>Même code que l'outil de banc <c>tools/qa/qa_parallel_loot_client.py::build_stub</c>.</summary>
+    /// <summary>Même code que <c>tools/qa/qa_reload_loot_v2.py::build_stub</c>, branches et ABI émulées sous Unicorn.</summary>
     internal static byte[] BuildStub(long address, long imageBase)
     {
         var code = new List<byte>();
@@ -84,12 +88,18 @@ internal static class ClientReloadLootPatch
             code.AddRange(Convert.FromHexString(hex));                              // restaure les volatils
         code.AddRange(new byte[] { 0x80, 0x7C, 0x24, 0x58, 0x00 });                // cmp résultat, 0
         code.AddRange(new byte[] { 0x48, 0x8D, 0xA4, 0x24, 0xC0, 0x00, 0x00, 0x00 }); // lea rsp,[rsp+0xc0] (flags intacts)
-        // Objet au sol : envoi direct, l'état local de l'arme et l'animation de rechargement restent intacts.
-        code.AddRange(Rel32(new byte[] { 0x0F, 0x85 }, address + code.Count, imageBase + SendRva));
-        // Toute autre cible : exactement le cmp/jg déplacé, puis l'ancien chemin d'annulation.
+        int fallbackJump = code.Count;
+        code.AddRange(new byte[] { 0x0F, 0x84, 0, 0, 0, 0 }); // non-world -> comparaison native
+        // Objet au sol : garder le refus ADS ; hors visée, ne dépendre ni de l'ACK ni de l'état simple/boucle.
+        code.AddRange(Convert.FromHexString("83be2009000002")); // cmp dword [rsi+0x920], 2
+        code.AddRange(Rel32(new byte[] { 0x0F, 0x84 }, address + code.Count, imageBase + AdsRva));
+        code.AddRange(Rel32(new byte[] { 0xE9 }, address + code.Count, imageBase + SendRva));
+        byte[] fallbackBranch = Rel32(new byte[] { 0x0F, 0x84 }, address + fallbackJump, address + code.Count);
+        for (int i = 0; i < fallbackBranch.Length; i++) code[fallbackJump + i] = fallbackBranch[i];
+        // Autres cibles : exactement le cmp/jg déplacé, puis le contrôle de réponse en attente d'origine.
         code.AddRange(Original.Take(7));
-        code.AddRange(Rel32(new byte[] { 0x0F, 0x8F }, address + code.Count, imageBase + SendRva));
-        code.AddRange(Rel32(new byte[] { 0xE9 }, address + code.Count, imageBase + CancelRva));
+        code.AddRange(Rel32(new byte[] { 0x0F, 0x8F }, address + code.Count, imageBase + AdsRva));
+        code.AddRange(Rel32(new byte[] { 0xE9 }, address + code.Count, imageBase + PendingRva));
         return code.ToArray();
 
         static byte[] Xmm(byte op, int register, int displacement)
@@ -117,12 +127,18 @@ internal static class ClientReloadLootPatch
         long site = memory.ImageBase + SiteRva;
         long allocation = 0;
         var suspended = false;
-        var installed = false;
+        var siteWriteAttempted = false;
         try
         {
             var current = memory.Read(site, Original.Length);
-            if (current[0] == 0xE9 && current.Skip(5).All(b => b == 0x90))
-                return new Result(Outcome.AlreadyApplied, "déjà installé");
+            if (current.Length == Original.Length && current[0] == 0xE9 && current.Skip(5).All(b => b == 0x90))
+            {
+                long target = site + 5 + BitConverter.ToInt32(current, 1);
+                var expectedStub = BuildStub(target, memory.ImageBase);
+                if (memory.Read(target, expectedStub.Length).AsSpan().SequenceEqual(expectedStub))
+                    return new Result(Outcome.AlreadyApplied, "déjà installé et vérifié");
+                return new Result(Outcome.NotReady, "un autre saut occupe le site");
+            }
             if (!current.AsSpan().SequenceEqual(Original))
                 return new Result(Outcome.NotReady, "les instructions d'origine ne sont pas (encore) en mémoire");
 
@@ -140,16 +156,24 @@ internal static class ClientReloadLootPatch
             // Dernière vérification sous suspension : personne n'a modifié le site entre-temps.
             if (!memory.Read(site, Original.Length).AsSpan().SequenceEqual(Original))
                 throw new InvalidOperationException("le site a changé pendant la préparation");
+            // WriteProcessMemory ou FlushInstructionCache peuvent échouer APRÈS avoir écrit des octets.
+            siteWriteAttempted = true;
             memory.WriteCode(site, BuildReplacement(site, allocation));
-            installed = true;
+            if (!memory.Read(site, Original.Length).AsSpan().SequenceEqual(BuildReplacement(site, allocation)))
+                throw new InvalidOperationException("le saut écrit ne correspond pas au remplacement attendu");
             return new Result(Outcome.Applied, $"trampoline 0x{allocation:X}");
         }
         catch (Exception ex)
         {
             try
             {
-                if (installed) memory.WriteCode(site, Original);
-                if (allocation != 0 && !installed) memory.Free(allocation);
+                if (siteWriteAttempted)
+                {
+                    memory.WriteCode(site, Original);
+                    if (!memory.Read(site, Original.Length).AsSpan().SequenceEqual(Original))
+                        throw new InvalidOperationException("restauration du site non confirmée");
+                }
+                if (allocation != 0) memory.Free(allocation);
             }
             catch
             {
@@ -168,18 +192,36 @@ internal static class ClientReloadLootPatch
 
     // ---------------------------------------------------------------- validation de l'exécutable
 
-    private static string? _pinnedPath;
-
-    /// <summary>Vrai seulement pour l'exécutable analysé (SHA-256). Le résultat est mémorisé par chemin.</summary>
+    /// <summary>Vrai seulement pour l'exécutable analysé ; revérifié à chaque processus, même après une mise à jour.</summary>
     internal static bool IsPinnedClient(string exePath)
     {
-        if (string.Equals(_pinnedPath, exePath, StringComparison.OrdinalIgnoreCase)) return true;
         using var stream = File.OpenRead(exePath);
         var hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
-        if (hash != ClientSha256) return false;
-        _pinnedPath = exePath;
-        return true;
+        return hash == ClientSha256;
     }
+
+    /// <summary>
+    /// Le correctif ne se pose JAMAIS avant que le monde soit chargé et le jeu stable. Posé au menu (TitleScreen), il
+    /// a planté H1Z1.exe au chargement du monde (c0000005, rapport 1.0.8) ; posé en jeu il a survécu à un second
+    /// chargement de monde (banc : startmatch puis endmatch).
+    /// </summary>
+    internal static int WorldReadyMarker(string log)
+    {
+        int ready = log.LastIndexOf("newState=GAMESTATE_INGAME", StringComparison.Ordinal);
+        int barrier = -1;
+        foreach (var marker in new[] {
+            "newState=GAMESTATE_TITLESCREEN", "newState=GAMESTATE_PREGAME",
+            "newState=GAMESTATE_LOADINGSCREEN", "newState=GAMESTATE_SHUTDOWN",
+            "newState=cClientRunStateCharacterCreateOrDelete", "newState=cClientRunStateLoggingIn",
+            "newState=cClientRunStateWaitForZoneLoad", "newState=cClientRunStateWaitForFirstZone",
+            "newState=cClientRunStateWaitForTeleport", "newState=cClientRunStateShuttingDown",
+            "WaitingForReloginSession" })
+            barrier = Math.Max(barrier, log.LastIndexOf(marker, StringComparison.Ordinal));
+        return ready > barrier ? ready : -1;
+    }
+
+    internal static bool IsSafeMoment(ClientStage stage, DateTimeOffset? worldReadySince, DateTimeOffset now) =>
+        stage == ClientStage.InGame && worldReadySince is { } since && now - since >= TimeSpan.FromSeconds(20);
 
     internal static bool Disabled => Environment.GetEnvironmentVariable("COTK_DISABLE_CLIENT_PATCH") == "1";
 
@@ -194,6 +236,8 @@ internal static class ClientReloadLootPatch
             if (!string.Equals(Path.GetFullPath(main.FileName), Path.GetFullPath(exePath), StringComparison.OrdinalIgnoreCase))
                 return new Result(Outcome.NotPinnedClient, "le processus n'exécute pas ce fichier");
             using var memory = new ProcessMemory(process, main.BaseAddress.ToInt64());
+            if (!memory.Read(memory.ImageBase + LegacySiteRva, LegacyOriginal.Length).AsSpan().SequenceEqual(LegacyOriginal))
+                return new Result(Outcome.NotReady, "ancien patch présent ou site différent ; redémarrer le jeu");
             return Apply(memory);
         }
         catch (Exception ex)
